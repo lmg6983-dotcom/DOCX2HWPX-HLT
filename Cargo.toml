@@ -1,0 +1,32 @@
+[package]
+name = "docx2hwpx-hlt"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "docx2hwpx-hlt"
+path = "src/main.rs"
+
+[dependencies]
+# DOCX 해석 · HLT 굽기: 서안(seoan-editor, MIT)의 hlt-core
+hlt-core = { git = "https://github.com/tornado1014/seoan-editor", rev = "35261f4940564ef47dbd87c04b614778556c8216" }
+# HWPX 쓰기: HwpForge (MIT OR Apache-2.0)
+hwpforge-core = "0.18"
+hwpforge-foundation = "0.18"
+hwpforge-smithy-hwpx = "0.18"
+# 수식 · 글자 그림: Typst 를 라이브러리로
+typst = "0.15"
+typst-render = "0.15"
+typst-layout = "0.15"
+typst-kit = { version = "0.15", features = ["embedded-fonts", "scan-fonts"] }
+# WMF/EMF(OLE 수식 미리보기 · 도면) → SVG → PNG
+wmf-core = { version = "0.1", default-features = false, features = ["svg"] }
+emf-core = { version = "0.1", default-features = false, features = ["svg"] }
+resvg = { version = "0.47", default-features = false, features = ["raster-images"] }
+encoding_rs = "0.8"
+serde_json = "1"
+quick-xml = "0.41"
+zip = { version = "3", default-features = false, features = ["deflate"] }
+
+[profile.dev.package."*"]
+opt-level = 2
