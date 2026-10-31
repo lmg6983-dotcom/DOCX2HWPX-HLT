@@ -50,10 +50,10 @@ struct Writer {
     image_count: usize,
     rels: HashMap<String, String>,
     media: HashMap<String, Vec<u8>>,
-    warnings: Vec<String>,
+    warnings: crate::normalize::Warnings,
 }
 
-pub fn convert(docx: &[u8]) -> Result<(Vec<u8>, Vec<String>), String> {
+pub fn convert(docx: &[u8]) -> Result<(Vec<u8>, crate::normalize::Warnings), String> {
     let mut zip = zip::ZipArchive::new(Cursor::new(docx)).map_err(|e| e.to_string())?;
     let mut read = |name: &str| -> Option<Vec<u8>> {
         let mut f = zip.by_name(name).ok()?;
@@ -311,7 +311,8 @@ impl Writer {
             .and_then(|b| b.get("r:embed"))
             .or_else(|| el.find("v:imagedata").and_then(|b| b.get("r:id")))?;
         let Some(bytes) = self.media.get(id).cloned() else {
-            self.warnings.push(format!("그림 {id} 의 파일이 없습니다"));
+            self.warnings
+                .push(("image_missing", format!("그림 {id} 의 파일이 없습니다")));
             return None;
         };
         let path = self.rels.get(id).cloned().unwrap_or_default();

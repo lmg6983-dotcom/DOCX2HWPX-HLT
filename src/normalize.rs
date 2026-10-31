@@ -20,15 +20,17 @@ const EMU_PER_PT: f64 = 12700.0;
 /// 크기를 적지 않은 글의 크기 — hlt-core 가 HLT 본문에 쓰는 값과 같다.
 pub const DEFAULT_SIZE_PT: f64 = 12.0;
 
+/// (코드, 설명) 목록. 코드는 AGENTS.md 의 표와 같다.
+pub type Warnings = Vec<(&'static str, String)>;
+
 #[derive(Default, Debug)]
 pub struct Report {
     pub equations: usize,
-    pub equation_failures: Vec<String>,
     pub metafiles: usize,
     pub scripts: usize,
     pub substitutions: HashMap<(char, String), usize>,
     pub glyph_images: HashMap<String, usize>,
-    pub warnings: Vec<String>,
+    pub warnings: Warnings,
 }
 
 struct Normalizer<'a> {
@@ -153,9 +155,10 @@ impl Normalizer<'_> {
                 continue;
             };
             let png = crate::render::metafile_to_png(bytes, is_emf).or_else(|e| {
-                self.report
-                    .warnings
-                    .push(format!("{target}: {e} — 자리표 그림을 넣습니다"));
+                self.report.warnings.push((
+                    "metafile_placeholder",
+                    format!("{target}: {e} — 자리표 그림을 넣습니다"),
+                ));
                 self.renderer
                     .glyph("[그림 변환 실패]", DEFAULT_SIZE_PT)
                     .map(|p| p.bytes)
@@ -167,7 +170,10 @@ impl Normalizer<'_> {
                     retarget.push((rel.get("Id").unwrap_or_default().to_string(), name));
                     self.report.metafiles += 1;
                 }
-                Err(e) => self.report.warnings.push(format!("{target}: {e}")),
+                Err(e) => self
+                    .report
+                    .warnings
+                    .push(("metafile_failed", format!("{target}: {e}"))),
             }
         }
         for node in &mut self.rels.children {
@@ -279,9 +285,10 @@ impl Normalizer<'_> {
             runs.extend(piece);
         }
         if nested {
-            self.report
-                .warnings
-                .push("표 칸 안의 표는 HLT 에서 글(「칸 | 칸 / 다음 줄」)로 풀었습니다".into());
+            self.report.warnings.push((
+                "nested_table_flattened",
+                "표 칸 안의 표는 HLT 에서 글(「칸 | 칸 / 다음 줄」)로 풀었습니다".into(),
+            ));
         }
         let mut p = Element::new("w:p");
         p.children.extend(ppr.map(Node::El));
@@ -302,7 +309,10 @@ impl Normalizer<'_> {
             Ok(png) => png,
             Err(e) => {
                 // 그리지 못한 수식은 글로라도 남긴다(잃지 않는다).
-                self.report.equation_failures.push(format!("{e} ← {body}"));
+                self.report.warnings.push((
+                    "equation_as_text",
+                    format!("수식을 그리지 못해 글로 남김: {e} ← {body}"),
+                ));
                 return Some(
                     Element::new("w:r").child(
                         Element::new("w:t")
@@ -441,8 +451,9 @@ impl Normalizer<'_> {
             };
             match text {
                 Some(c) => *el = Element::new("w:t").text_child(&c.to_string()),
-                None => self.report.warnings.push(format!(
-                    "{font} 글꼴 기호 U+{code:04X} 는 옮기지 못했습니다"
+                None => self.report.warnings.push((
+                    "symbol_unmapped",
+                    format!("{font} 글꼴 기호 U+{code:04X} 는 옮기지 못했습니다"),
                 )),
             }
         }
@@ -505,9 +516,10 @@ impl Normalizer<'_> {
                         match self.glyph(&cluster, size) {
                             Ok(run) => out.push(run),
                             Err(e) => {
-                                self.report
-                                    .warnings
-                                    .push(format!("글자 {cluster:?} 를 그리지 못했습니다: {e}"));
+                                self.report.warnings.push((
+                                    "glyph_failed",
+                                    format!("글자 {cluster:?} 를 그리지 못했습니다: {e}"),
+                                ));
                                 current.children.push(Node::El(text_el(&cluster)));
                             }
                         }

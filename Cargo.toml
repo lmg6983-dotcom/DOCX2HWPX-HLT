@@ -24,6 +24,7 @@ wmf-core = { version = "0.1", default-features = false, features = ["svg"] }
 emf-core = { version = "0.1", default-features = false, features = ["svg"] }
 resvg = { version = "0.47", default-features = false, features = ["raster-images"] }
 encoding_rs = "0.8"
+serde_json = "1"
 quick-xml = "0.41"
 zip = { version = "3", default-features = false, features = ["deflate"] }
 

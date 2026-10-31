@@ -540,6 +540,7 @@ dependencies = [
  "hwpforge-smithy-hwpx",
  "quick-xml 0.41.0",
  "resvg",
+ "serde_json",
  "typst",
  "typst-kit",
  "typst-layout",

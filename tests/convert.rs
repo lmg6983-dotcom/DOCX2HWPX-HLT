@@ -3,30 +3,109 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-fn convert(to: &str) -> (PathBuf, String) {
+fn bin(args: &[&std::ffi::OsStr]) -> (i32, serde_json::Value) {
+    let run = Command::new(env!("CARGO_BIN_EXE_docx2hwpx-hlt"))
+        .args(args)
+        .arg("--json")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&run.stdout);
+    let json = serde_json::from_str(stdout.trim()).unwrap_or_else(|e| panic!("{e}: {stdout:?}"));
+    (run.status.code().unwrap(), json)
+}
+
+fn convert(to: &str) -> (PathBuf, serde_json::Value) {
     let dir = std::env::temp_dir().join(format!("d2h-test-{}-{to}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let out = dir.join(format!("sample.{to}"));
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sample.docx");
-    let run = Command::new(env!("CARGO_BIN_EXE_docx2hwpx-hlt"))
-        .arg(&fixture)
-        .args(["--to", to, "-o"])
-        .arg(&out)
-        .output()
-        .unwrap();
-    let log = String::from_utf8_lossy(&run.stderr).into_owned();
-    assert!(run.status.success(), "{log}");
-    assert!(log.contains("수식 그림 6개"), "{log}");
-    assert!(!log.contains("수식을 그리지 못해"), "{log}");
-    assert!(log.contains("WMF/EMF 그림 변환 2개"), "{log}");
-    (out, log)
+    let (code, r) = bin(&[
+        fixture.as_os_str(),
+        "--to".as_ref(),
+        to.as_ref(),
+        "-o".as_ref(),
+        out.as_os_str(),
+    ]);
+    assert_eq!(code, 0, "{r}");
+    assert_eq!(r["ok"], true);
+    assert_eq!(r["equations"], 6, "{r}");
+    assert_eq!(r["metafiles"], 2, "{r}");
+    assert!(
+        !r["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|w| w["code"] == "equation_as_text"),
+        "{r}"
+    );
+
+    // 다시 돌리면 멈추고(output_exists · 원본 그대로), --overwrite 면 바꿔 쓴다.
+    let before = std::fs::read(&out).unwrap();
+    let (code, again) = bin(&[
+        fixture.as_os_str(),
+        "--to".as_ref(),
+        to.as_ref(),
+        "-o".as_ref(),
+        out.as_os_str(),
+    ]);
+    assert_eq!(
+        (code, again["error"]["code"].as_str()),
+        (1, Some("output_exists"))
+    );
+    assert_eq!(std::fs::read(&out).unwrap(), before);
+    let (code, _) = bin(&[
+        fixture.as_os_str(),
+        "--to".as_ref(),
+        to.as_ref(),
+        "-o".as_ref(),
+        out.as_os_str(),
+        "--overwrite".as_ref(),
+    ]);
+    assert_eq!(code, 0);
+    assert_eq!(
+        std::fs::read_dir(&dir).unwrap().count(),
+        1,
+        "임시 파일이 남지 않는다"
+    );
+    (out, r)
+}
+
+#[test]
+fn usage_errors_are_json_with_exit_2() {
+    let (code, r) = bin(&["a.docx".as_ref(), "--to".as_ref()]);
+    assert_eq!((code, r["error"]["code"].as_str()), (2, Some("usage")));
+    let (code, r) = bin(&["없는.docx".as_ref(), "--to".as_ref(), "hlt".as_ref()]);
+    assert_eq!(
+        (code, r["error"]["code"].as_str()),
+        (1, Some("input_unreadable"))
+    );
 }
 
 #[test]
 fn hlt_keeps_equations_tables_and_nk_characters() {
-    let (out, log) = convert("hlt");
-    assert!(log.contains("U+0078+0302"), "x̂ 는 그림으로: {log}");
+    let (out, r) = convert("hlt");
+    assert_eq!(r["dialect"], "domestic");
+    assert_eq!(r["scripts"], 4);
+    let glyphs: Vec<&str> = r["glyph_images"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|g| g["codepoints"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        glyphs,
+        ["U+0078 U+0302", "U+00FC", "U+0177"],
+        "x̂ · ü · ŷ 는 그림으로(글자 순)"
+    );
+    assert_eq!(r["substitutions"][0]["to"], "-", "– → -");
+    assert!(
+        r["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|w| w["code"] == "nested_table_flattened")
+    );
     let (doc, payloads) = hlt_core::hml_document_from_hlt(&out).unwrap();
     // 수식 6 · WMF/EMF 2 · OLE 수식 1 · PNG 2 · 글자 그림 3(x̂ ŷ ü)
     assert_eq!(payloads.len(), 14);
