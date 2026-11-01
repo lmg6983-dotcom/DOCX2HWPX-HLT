@@ -20,6 +20,19 @@ cargo build --release
 
 에이전트(Claude Code 등)로 쓸 때의 계약(JSON 필드 · 실패/경고 코드)은 [AGENTS.md](AGENTS.md).
 
+## 화면 앱
+
+```bash
+cargo build --release --features gui --bin docx2hwpx-hlt-gui   # → target/release/docx2hwpx-hlt-gui(.exe)
+```
+
+1. DOCX 를 창에 끌어다 놓거나 눌러서 고른다(실행 파일 아이콘에 끌어다 놓아도 된다)
+2. HLT(NK-Editor) 또는 HWPX(MOIP-Editor)를 고른다
+3. 「변환」 — 게이지가 단계(글꼴 · 수식 n/N · 쓰기)를 따라 찬다
+4. 끝나면 「다른 이름으로 저장」 창이 뜬다. 이름은 입력 파일과 같고 확장자만 바뀐다(`명세서.docx` → `명세서.hlt`). 창을 닫았으면 「저장…」으로 다시 연다
+
+바꾼 글자 · 글자 그림 · 경고는 창 아래에 목록으로 보인다. 화면 앱은 HLT 를 국내 출원 서식으로만 만든다(PCT 는 명령줄 `--pct`).
+
 ## 깨지기 쉬운 것을 어떻게 다루나
 
 변환 전에 DOCX 를 한 번 고쳐 쓴다(`src/normalize.rs`). 두 출력 모두 이 단계를 거친다.
@@ -30,7 +43,8 @@ cargo build --release
 | 옛 OLE 수식(Equation 3.0 · MathType) | WMF 미리보기를 PNG 로 바꾸고, VML 크기 그대로 넣는다 |
 | WMF · EMF 그림 | SVG 를 거쳐 PNG 로. 실패하면 「그림 변환 실패」 자리표 그림 + 경고 |
 | 표 | 가로 합침(gridSpan) · 세로 합침(vMerge) · gridBefore/After. HWPX 는 칸 안 여러 문단과 표 안 표까지 그대로 옮긴다 |
-| 변경 추적 | 넣은 글은 받아들이고, 지운 글은 버린다 |
+| 변경 추적 | **모두 받아들인 상태로** 변환한다: 넣은/옮겨 온 글은 남기고, 지운/옮겨 간 글 · 지운 표 줄/칸은 버리고, 서식 변경은 새 서식으로, 지운 문단 표시는 다음 문단과 합친다 |
+| 메모 | **모두 지운다**: 본문의 메모 표시와 메모 부분(comments*.xml) · 관계 · 내용 형식까지 |
 | `w:sym`(Symbol 글꼴) | 유니코드 글자로(β, ±, → …) |
 
 ### NK-Editor(HLT) 글자 규칙

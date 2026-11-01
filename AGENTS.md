@@ -26,7 +26,7 @@ target/release/docx2hwpx-hlt 명세서.docx --to hlt --json
 
 ```json
 {"ok":true,"input":"a.docx","output":"a.hlt","format":"hlt","dialect":"domestic",
- "equations":6,"metafiles":2,"scripts":4,
+ "revisions_accepted":7,"comments_removed":1,"equations":6,"metafiles":2,"scripts":4,
  "substitutions":[{"from":"–","codepoints":"U+2013","to":"-","count":1}],
  "glyph_images":[{"text":"x̂","codepoints":"U+0078 U+0302","count":1}],
  "warnings":[{"code":"nested_table_flattened","message":"…"}]}
@@ -35,6 +35,8 @@ target/release/docx2hwpx-hlt 명세서.docx --to hlt --json
 | 필드 | 뜻 |
 |---|---|
 | `dialect` | HLT: `domestic` · `pct`, HWPX: `null` |
+| `revisions_accepted` | 받아들인 변경 추적 수(넣기 · 지우기 · 옮기기 · 서식 변경 · 지운 문단 표시 · 줄/칸) — 변환은 늘 모두 받아들인 상태로 한다 |
+| `comments_removed` | 지운 메모 수 — 메모는 늘 모두 지운다(본문 표시 · comments*.xml) |
 | `equations` | 그림으로 넣은 수식(OMML) 수 |
 | `metafiles` | PNG 로 바꾼 WMF/EMF(OLE 수식 미리보기 포함) 수 |
 | `scripts` | 첨자 모양 글자(², ₂)를 첨자 서식으로 바꾼 곳 수 (HLT) |
@@ -77,7 +79,9 @@ target/release/docx2hwpx-hlt 명세서.docx --to hlt --json
 
 | 파일 | 내용 |
 |---|---|
-| `src/main.rs` | 인자 · JSON · 종료 코드 · 출력 바꿔 넣기 |
+| `src/lib.rs` | 변환 핵심 `convert`(바이트 → 바이트 + 보고 · 진행 알림) · `write_atomic` |
+| `src/main.rs` | 명령줄: 인자 · JSON · 종료 코드 |
+| `src/bin/gui.rs` | 화면 앱(egui · `gui` 기능) |
 | `src/normalize.rs` | DOCX 고쳐 쓰기(수식 → 그림, WMF/EMF, 변경 추적, 칸 합치기, HLT 글자 규칙 적용) |
 | `src/chars.rs` | NK-Editor 글자 규칙(CP949) |
 | `src/omml.rs` | OMML → Typst 수식 |
@@ -87,6 +91,7 @@ target/release/docx2hwpx-hlt 명세서.docx --to hlt --json
 
 ```bash
 cargo fmt && cargo clippy --all-targets && cargo test
+cargo clippy --features gui --bin docx2hwpx-hlt-gui   # 화면 앱을 고쳤을 때
 python3 tests/make_fixture.py   # 고정 자료를 바꿨을 때만
 ```
 
