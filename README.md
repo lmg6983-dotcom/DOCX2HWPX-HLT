@@ -22,14 +22,19 @@ cargo build --release
 
 ## 화면 앱
 
+**윈도 실행 파일**: GitHub Actions(`windows` 작업)가 푸시마다 만든다. 저장소의 Actions → 최근 실행 → Artifacts 의
+`docx2hwpx-hlt-windows-x64` (zip: `docx2hwpx-hlt-gui.exe` · `docx2hwpx-hlt.exe`)를 받는다. 직접 빌드하려면:
+
 ```bash
 cargo build --release --features gui --bin docx2hwpx-hlt-gui   # → target/release/docx2hwpx-hlt-gui(.exe)
 ```
 
-1. DOCX 를 창에 끌어다 놓거나 눌러서 고른다(실행 파일 아이콘에 끌어다 놓아도 된다)
+1. DOCX 를 창에 끌어다 놓거나 눌러서 고른다(Ctrl+O · 실행 파일 아이콘에 끌어다 놓아도 된다)
 2. HLT(NK-Editor) 또는 HWPX(MOIP-Editor)를 고른다
 3. 「변환」 — 게이지가 단계(글꼴 · 수식 n/N · 쓰기)를 따라 찬다
-4. 끝나면 「다른 이름으로 저장」 창이 뜬다. 이름은 입력 파일과 같고 확장자만 바뀐다(`명세서.docx` → `명세서.hlt`). 창을 닫았으면 「저장…」으로 다시 연다
+4. 끝나면 「다른 이름으로 저장」 창이 뜬다. 이름은 입력 파일과 같고 확장자만 바뀐다(`명세서.docx` → `명세서.hlt`). 창을 닫았으면 큰 단추 「저장…」(Ctrl+S)으로 다시 연다. 저장 뒤 「폴더 열기」
+
+Enter 는 큰 단추(변환 → 저장)를 누른다.
 
 바꾼 글자 · 글자 그림 · 경고는 창 아래에 목록으로 보인다. 화면 앱은 HLT 를 국내 출원 서식으로만 만든다(PCT 는 명령줄 `--pct`).
 
