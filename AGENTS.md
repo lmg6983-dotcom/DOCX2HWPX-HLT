@@ -37,7 +37,8 @@ target/release/docx2hwpx-hlt 명세서.docx --to hlt --json
 | `dialect` | HLT: `domestic` · `pct`, HWPX: `null` |
 | `revisions_accepted` | 받아들인 변경 추적 수(넣기 · 지우기 · 옮기기 · 서식 변경 · 지운 문단 표시 · 줄/칸) — 변환은 늘 모두 받아들인 상태로 한다 |
 | `comments_removed` | 지운 메모 수 — 메모는 늘 모두 지운다(본문 표시 · comments*.xml) |
-| `equations` | 그림으로 넣은 수식(OMML) 수 |
+| `equations` | 그림으로 넣은 수식(OMML) 수. 최소 14pt로 그린다 |
+| `images_optimized` | HLT 에서 다듬은 그림 수. `--image-dpi`(기본 300, 0 이면 끔) 상한으로 줄이고 흰 바탕 · 회색 잔물결과 채널 하위 2비트를 정리한다 |
 | `metafiles` | PNG 로 바꾼 WMF/EMF(OLE 수식 미리보기 포함) 수 |
 | `scripts` | 첨자 모양 글자(², ₂)를 첨자 서식으로 바꾼 곳 수 (HLT) |
 | `substitutions` | 모양이 같은 글자로 바꾼 것 (HLT) |

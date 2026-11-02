@@ -22,6 +22,8 @@ const IMAGE_REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/r
 const EMU_PER_PT: f64 = 12700.0;
 /// 크기를 적지 않은 글의 크기 — hlt-core 가 HLT 본문에 쓰는 값과 같다.
 pub const DEFAULT_SIZE_PT: f64 = 12.0;
+/// 수식 그림의 최소 글자 크기. 첨자가 읽히도록 본문보다 크게 둔다.
+pub const MIN_MATH_PT: f64 = 14.0;
 
 /// (코드, 설명) 목록. 코드는 AGENTS.md 의 표와 같다.
 pub type Warnings = Vec<(&'static str, String)>;
@@ -321,7 +323,7 @@ impl Normalizer<'_> {
 
     fn math(&mut self, el: &Element) -> Option<Element> {
         let display = el.name == "m:oMathPara";
-        let size = math_size(el).unwrap_or(DEFAULT_SIZE_PT);
+        let size = math_size(el).unwrap_or(DEFAULT_SIZE_PT).max(MIN_MATH_PT);
         let body = crate::omml::to_typst(el);
         if body.trim().is_empty() {
             return None;

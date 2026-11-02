@@ -38,6 +38,8 @@ serde_json = "1"
 eframe = { version = "0.37", optional = true }
 rfd = { version = "0.17", optional = true }
 quick-xml = "0.41"
+# HLT 그림 다듬기
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 zip = { version = "3", default-features = false, features = ["deflate"] }
 
 [profile.dev.package."*"]

@@ -136,7 +136,10 @@ impl App {
 
     fn target(&self) -> Target {
         if self.hlt {
-            Target::Hlt { pct: false }
+            Target::Hlt {
+                pct: false,
+                max_dpi: docx2hwpx_hlt::image_opt::DEFAULT_MAX_DPI,
+            }
         } else {
             Target::Hwpx
         }

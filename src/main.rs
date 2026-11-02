@@ -5,13 +5,14 @@ use docx2hwpx_hlt::{Failure, Target, fail};
 use serde_json::{Value, json};
 
 const USAGE: &str = "\
-사용법: docx2hwpx-hlt <입력.docx> --to <hwpx|hlt> [-o 출력] [--pct] [--overwrite] [--json] [--font-dir 폴더]...
+사용법: docx2hwpx-hlt <입력.docx> --to <hwpx|hlt> [-o 출력] [--pct] [--image-dpi N] [--overwrite] [--json] [--font-dir 폴더]...
 
   --to hwpx     MOIP-Editor 용 HWPX
   --to hlt      NK-Editor 용 HLT (CP949 밖 글자는 바꾸거나 그림으로)
   -o            출력 경로(기본: 입력 이름 + 확장자)
   --overwrite   출력이 이미 있으면 바꿔 쓴다(없으면 멈춘다). 실패하면 원래 파일은 그대로
   --pct         HLT 를 PCT 국내진입 서식으로(기본: 국내 출원 명세서)
+  --image-dpi   HLT 그림 해상도 상한(기본 300, 0 이면 그림을 다듬지 않음)
   --json        결과를 JSON 한 줄로 표준 출력에(사람용 글은 내지 않는다)
   --font-dir    수식 · 글자 그림에 쓸 글꼴 폴더 더하기(시스템 글꼴은 자동)
   --version     판 번호
@@ -26,6 +27,7 @@ struct Args {
     overwrite: bool,
     json: bool,
     font_dirs: Vec<PathBuf>,
+    max_dpi: u32,
 }
 
 enum Parsed {
@@ -40,6 +42,7 @@ fn parse_args(raw: &[String]) -> Result<Parsed, String> {
     let mut output = None;
     let (mut pct, mut overwrite, mut json) = (false, false, false);
     let mut font_dirs = Vec::new();
+    let mut max_dpi = docx2hwpx_hlt::image_opt::DEFAULT_MAX_DPI;
     let mut args = raw.iter();
     while let Some(a) = args.next() {
         let mut value = || {
@@ -51,6 +54,9 @@ fn parse_args(raw: &[String]) -> Result<Parsed, String> {
             "--to" | "-t" => to = Some(value()?),
             "-o" | "--output" => output = Some(PathBuf::from(value()?)),
             "--font-dir" => font_dirs.push(PathBuf::from(value()?)),
+            "--image-dpi" => {
+                max_dpi = value()?.parse().map_err(|_| "--image-dpi 는 정수입니다".to_string())?;
+            }
             "--pct" => pct = true,
             "--overwrite" => overwrite = true,
             "--json" => json = true,
@@ -88,6 +94,7 @@ fn parse_args(raw: &[String]) -> Result<Parsed, String> {
         overwrite,
         json,
         font_dirs,
+        max_dpi,
     }))
 }
 
@@ -154,7 +161,10 @@ fn run(args: &Args, result: &mut Value) -> Result<(), Failure> {
     let docx = std::fs::read(&args.input)
         .map_err(|e| fail("input_unreadable", format!("{}: {e}", args.input.display())))?;
     let target = if args.hlt {
-        Target::Hlt { pct: args.pct }
+        Target::Hlt {
+            pct: args.pct,
+            max_dpi: args.max_dpi,
+        }
     } else {
         Target::Hwpx
     };
