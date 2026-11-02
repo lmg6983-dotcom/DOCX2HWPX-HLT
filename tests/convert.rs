@@ -31,6 +31,9 @@ fn convert(to: &str) -> (PathBuf, serde_json::Value) {
     assert_eq!(r["ok"], true);
     assert_eq!(r["equations"], 6, "{r}");
     assert_eq!(r["metafiles"], 2, "{r}");
+    // 넣기 · 지우기 · 지운 줄 · 서식 변경 · 지운 문단 표시 · 옮겨 간 글 · 옮겨 온 글
+    assert_eq!(r["revisions_accepted"], 7, "{r}");
+    assert_eq!(r["comments_removed"], 1, "{r}");
     assert!(
         !r["warnings"]
             .as_array()
@@ -136,8 +139,33 @@ fn hlt_keeps_equations_tables_and_nk_characters() {
     assert!(cell("첫 줄 둘째 줄") && cell("안1 | 안2"));
     let merged = doc.cells.iter().find(|c| c.text == "세로 합침").unwrap();
     assert_eq!((merged.rowspan, merged.colspan), (2, 1));
-    assert!(doc.paragraphs.iter().any(|p| p.text.contains("넣은 글")));
-    assert!(!doc.paragraphs.iter().any(|p| p.text.contains("지운 글")));
+    let texts: Vec<&str> = doc.paragraphs.iter().map(|p| p.text.as_str()).collect();
+    assert!(texts.iter().any(|t| t.contains("넣은 글")));
+    for gone in ["지운 글", "옮겨 간 글", "지워야 할 메모"] {
+        assert!(!texts.iter().any(|t| t.contains(gone)), "{gone}: {texts:?}");
+    }
+    assert!(!doc.cells.iter().any(|c| c.text.contains("지운 줄")));
+    assert!(
+        texts.contains(&"【0006】 메모 달린 글 굵게 바뀐 글"),
+        "{texts:?}"
+    );
+    assert!(
+        texts.contains(&"【0007】 앞 문단 뒷 문단"),
+        "지운 문단 표시 → 합침: {texts:?}"
+    );
+    assert!(texts.contains(&"【0008】 가운데 옮겨 온 글"), "{texts:?}");
+    let memo = doc
+        .paragraphs
+        .iter()
+        .find(|p| p.text.starts_with("【0006】"))
+        .unwrap();
+    assert!(
+        memo.inlines.iter().any(
+            |i| matches!(i, hlt_core::HmlInline::Text { text, formats, .. }
+        if text.contains("굵게 바뀐 글") && formats.contains(&hlt_core::CharacterFormat::Bold))
+        ),
+        "새 서식(굵게)이 남는다"
+    );
 }
 
 #[test]
@@ -154,6 +182,13 @@ fn hwpx_keeps_equations_tables_and_text() {
             p.for_each_image(|_| images += 1);
         }
     }
+    for gone in ["지운 글", "지운 줄", "옮겨 간 글", "지워야 할 메모"] {
+        assert!(!text.contains(gone), "{gone}: {text}");
+    }
+    assert!(
+        text.contains("【0007】 앞 문단 뒷 문단") && text.contains("【0008】 가운데 옮겨 온 글"),
+        "{text}"
+    );
     assert!(
         text.contains("CO₂")
             && text.contains("x̂")
@@ -163,4 +198,23 @@ fn hwpx_keeps_equations_tables_and_text() {
     );
     assert_eq!(tables, 2, "표 + 칸 안의 표");
     assert_eq!(images, 11, "수식 6 · WMF/EMF 2 · OLE 수식 1 · PNG 2");
+}
+
+/// 화면 앱 게이지가 기대는 진행 알림: 줄지 않고, 수식마다 오고, 1.0 으로 끝난다.
+#[test]
+fn progress_rises_to_one() {
+    let docx =
+        std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sample.docx"))
+            .unwrap();
+    let mut seen: Vec<(f32, String)> = Vec::new();
+    let outcome = docx2hwpx_hlt::convert(&docx, docx2hwpx_hlt::Target::Hwpx, &[], &mut |f, s| {
+        seen.push((f, s.to_string()))
+    });
+    assert!(outcome.result.is_ok());
+    assert!(seen.windows(2).all(|w| w[0].0 <= w[1].0), "{seen:?}");
+    assert_eq!(seen.last().unwrap().0, 1.0);
+    assert!(
+        seen.iter().any(|(_, s)| s == "수식 그리는 중 (6/6)"),
+        "{seen:?}"
+    );
 }

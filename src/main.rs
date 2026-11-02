@@ -1,13 +1,7 @@
-mod chars;
-mod hwpx;
-mod normalize;
-mod omml;
-mod render;
-mod xml;
-
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::ExitCode;
 
+use docx2hwpx_hlt::{Failure, Target, fail};
 use serde_json::{Value, json};
 
 const USAGE: &str = "\
@@ -32,19 +26,6 @@ struct Args {
     overwrite: bool,
     json: bool,
     font_dirs: Vec<PathBuf>,
-}
-
-/// 실패 하나. `code` 는 에이전트가 갈래를 탈 수 있게 고정된 이름이다(AGENTS.md).
-struct Failure {
-    code: &'static str,
-    message: String,
-}
-
-fn fail(code: &'static str, message: impl Into<String>) -> Failure {
-    Failure {
-        code,
-        message: message.into(),
-    }
 }
 
 enum Parsed {
@@ -172,77 +153,27 @@ fn run(args: &Args, result: &mut Value) -> Result<(), Failure> {
     }
     let docx = std::fs::read(&args.input)
         .map_err(|e| fail("input_unreadable", format!("{}: {e}", args.input.display())))?;
-    let renderer = render::Renderer::new(&args.font_dirs);
-    let (normalized, report) =
-        normalize::normalize(&docx, &renderer, args.hlt).map_err(|e| fail("invalid_docx", e))?;
-
-    let mut substitutions: Vec<Value> = report
-        .substitutions
-        .iter()
-        .map(|((from, to), n)| json!({"from": from.to_string(), "codepoints": codepoints(&from.to_string()), "to": to, "count": n}))
-        .collect();
-    let mut glyphs: Vec<Value> = report
-        .glyph_images
-        .iter()
-        .map(|(g, n)| json!({"text": g, "codepoints": codepoints(g), "count": n}))
-        .collect();
-    glyphs.sort_by_key(|v| v["text"].as_str().unwrap_or_default().to_string());
-    let mut warnings: Vec<Value> = report
-        .warnings
-        .iter()
-        .map(|(code, message)| json!({"code": code, "message": message}))
-        .collect();
-
-    // 출력은 옆의 임시 이름에 다 쓴 뒤 옮긴다 — 실패해도 원래 파일이 남고, 반쯤 쓴 파일이 생기지 않는다.
-    let temp = args.output.with_file_name(format!(
-        ".{}.d2h-{}.tmp",
-        args.output
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy(),
-        std::process::id()
-    ));
-    let written = if args.hlt {
-        write_hlt(&normalized, args, &temp, &mut substitutions)
+    let target = if args.hlt {
+        Target::Hlt { pct: args.pct }
     } else {
-        hwpx::convert(&normalized)
-            .map_err(|e| fail("convert_failed", e))
-            .and_then(|(bytes, w)| {
-                warnings.extend(
-                    w.iter()
-                        .map(|(code, message)| json!({"code": code, "message": message})),
-                );
-                std::fs::write(&temp, bytes)
-                    .map_err(|e| fail("write_failed", format!("{}: {e}", temp.display())))
-            })
+        Target::Hwpx
     };
-    let written = written.and_then(|()| {
-        std::fs::rename(&temp, &args.output)
-            .map_err(|e| fail("write_failed", format!("{}: {e}", args.output.display())))
-    });
-    if written.is_err() {
-        let _ = std::fs::remove_file(&temp);
+    let outcome = docx2hwpx_hlt::convert(&docx, target, &args.font_dirs, &mut |_, _| {});
+    if let (Value::Object(into), Value::Object(report)) = (result, outcome.report) {
+        into.extend(report);
     }
-    substitutions.sort_by_key(|v| v["from"].as_str().unwrap_or_default().to_string());
-
-    result["equations"] = report.equations.into();
-    result["metafiles"] = report.metafiles.into();
-    result["scripts"] = report.scripts.into();
-    result["substitutions"] = substitutions.into();
-    result["glyph_images"] = glyphs.into();
-    result["warnings"] = warnings.into();
-    written
-}
-
-fn codepoints(s: &str) -> String {
-    s.chars()
-        .map(|c| format!("U+{:04X}", c as u32))
-        .collect::<Vec<_>>()
-        .join(" ")
+    docx2hwpx_hlt::write_atomic(&args.output, &outcome.result?)
 }
 
 fn print_human(r: &Value) {
     let n = |k: &str| r[k].as_u64().unwrap_or(0);
+    if r.get("equations").is_some() {
+        eprintln!(
+            "변경 추적 {}곳 받아들임 · 메모 {}개 지움",
+            n("revisions_accepted"),
+            n("comments_removed")
+        );
+    }
     if r.get("equations").is_some() {
         eprintln!(
             "수식 그림 {}개 · WMF/EMF 그림 변환 {}개",
@@ -279,54 +210,4 @@ fn print_human(r: &Value) {
         ),
         None => eprintln!("완료: {}", r["output"].as_str().unwrap_or_default()),
     }
-}
-
-/// hlt-core 는 경로로 읽으므로 고쳐 쓴 DOCX 를 임시 파일로 둔다.
-fn write_hlt(
-    normalized: &[u8],
-    args: &Args,
-    output: &Path,
-    substitutions: &mut Vec<Value>,
-) -> Result<(), Failure> {
-    let stem = args.input.file_stem().unwrap_or_default().to_string_lossy();
-    let docx = std::env::temp_dir().join(format!("{stem}.d2h-{}.docx", std::process::id()));
-    std::fs::write(&docx, normalized)
-        .map_err(|e| fail("write_failed", format!("{}: {e}", docx.display())))?;
-    let result = hlt_from_docx(&docx, args, output, substitutions);
-    let _ = std::fs::remove_file(&docx);
-    result
-}
-
-fn hlt_from_docx(
-    docx: &Path,
-    args: &Args,
-    output: &Path,
-    substitutions: &mut Vec<Value>,
-) -> Result<(), Failure> {
-    let core = |e: hlt_core::CoreError| {
-        fail(
-            "convert_failed",
-            format!("HLT: {} ({}) {:?}", e.message, e.phase, e.details),
-        )
-    };
-    let (document, payloads, subs) = hlt_core::load_generation_input(docx).map_err(core)?;
-    // 우리 글자 규칙이 먼저 거의 다 바꾸지만, hlt-core 가 마저 바꾼 것도 함께 알린다.
-    substitutions.extend(subs.iter().map(|s| {
-        json!({"from": s.from.to_string(), "codepoints": codepoints(&s.from.to_string()), "to": s.to, "count": s.count})
-    }));
-    let dialect = if args.pct {
-        hlt_core::GenerationDialect::PctPatent
-    } else {
-        hlt_core::GenerationDialect::PatentSpecificationKo
-    };
-    hlt_core::save_generated_hlt_as_new(
-        docx,
-        &document,
-        dialect,
-        &payloads,
-        output,
-        hlt_core::WriteOptions::default(),
-    )
-    .map_err(core)?;
-    Ok(())
 }

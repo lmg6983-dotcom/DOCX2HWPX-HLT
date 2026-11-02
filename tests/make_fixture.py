@@ -1,4 +1,5 @@
-"""시험용 DOCX(tests/fixtures/sample.docx)를 만든다: 수식 · 합친 표 · 표 안 표 · 그림(PNG · WMF · EMF) · 특수 글자.
+"""시험용 DOCX(tests/fixtures/sample.docx)를 만든다: 수식 · 합친 표 · 표 안 표 · 그림(PNG · WMF · EMF) · 특수 글자 ·
+메모 · 변경 추적(넣기 · 지우기 · 옮기기 · 서식 변경 · 지운 문단 표시 · 지운 줄).
 python3 tests/make_fixture.py  (표준 라이브러리만 쓴다)"""
 import struct, zlib, zipfile, pathlib
 
@@ -120,11 +121,27 @@ body = "".join(
                 tc(p(t("합친 머리")), 3600, span=2) + tc(p(t("세로 합침")), 1800, vmerge="restart"),
                 tc(p(t("첫 줄")) + p(t("둘째 줄")), 1800) + tc(p(t("수식 ")) + p(omath(frac(mr("a"), mr("b")))), 1800) + tc(p(), 1800, vmerge="continue"),
                 tc(p(t("그림")) + p(drawing("rIdImg", 540000, 360000, 2)), 1800) + tc(inner + p(), 1800) + tc(p(t("끝")), 1800),
+                # 변경 추적으로 지운 줄
+                '<w:trPr><w:del w:id="9" w:author="a"/></w:trPr>' + tc(p(t("지운 줄")), 3600, span=2) + tc(p(t("지운 줄")), 1800),
             ],
         ),
         p(t("【0004】 WMF 와 EMF 그림: "), drawing("rIdWmf", 1800000, 900000, 3), drawing("rIdEmf", 1800000, 900000, 4)),
         # 옛 OLE 수식(Equation 3.0 · MathType): VML 에 WMF 미리보기만 있다
         p(t("【0005】 OLE 수식 "), '<w:r><w:object><v:shape style="width:60pt;height:20pt"><v:imagedata r:id="rIdWmf"/></v:shape></w:object></w:r>', t(" 끝.")),
+        # 메모 · 서식 변경
+        p(
+            t("【0006】 메모 "),
+            '<w:commentRangeStart w:id="0"/>',
+            t("달린 글"),
+            '<w:commentRangeEnd w:id="0"/>',
+            '<w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="0"/></w:r>',
+            '<w:r><w:rPr><w:b/><w:rPrChange w:id="10" w:author="a"><w:rPr/></w:rPrChange></w:rPr><w:t xml:space="preserve"> 굵게 바뀐 글</w:t></w:r>',
+        ),
+        # 지운 문단 표시: 다음 문단과 합쳐진다
+        '<w:p><w:pPr><w:rPr><w:del w:id="11" w:author="a"/></w:rPr></w:pPr>' + t("【0007】 앞 문단") + "</w:p>",
+        p(t(" 뒷 문단")),
+        # 옮기기
+        p(t("【0008】 "), '<w:moveFrom w:id="12" w:author="a">' + t("옮겨 간 글") + "</w:moveFrom>", t("가운데"), '<w:moveTo w:id="13" w:author="a">' + t(" 옮겨 온 글") + "</w:moveTo>"),
         p('<w:r><w:br w:type="page"/></w:r>'),
         p(t("【청구범위】")),
         p(t("【청구항 1】")),
@@ -152,6 +169,8 @@ rels = (
     f'<Relationship Id="rIdImg" Type="{img}" Target="media/image1.png"/>'
     f'<Relationship Id="rIdWmf" Type="{img}" Target="media/image2.wmf"/>'
     f'<Relationship Id="rIdEmf" Type="{img}" Target="media/image3.emf"/>'
+    '<Relationship Id="rIdCm" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="comments.xml"/>'
+    '<Relationship Id="rIdCmx" Type="http://schemas.microsoft.com/office/2011/relationships/commentsExtended" Target="commentsExtended.xml"/>'
     "</Relationships>"
 )
 types = (
@@ -159,8 +178,16 @@ types = (
     '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
     '<Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/>'
     '<Default Extension="wmf" ContentType="image/x-wmf"/><Default Extension="emf" ContentType="image/x-emf"/>'
-    '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'
+    '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+    '<Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/>'
+    '<Override PartName="/word/commentsExtended.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml"/></Types>'
 )
+comments = (
+    '<?xml version="1.0" encoding="UTF-8"?><w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+    '<w:comment w:id="0" w:author="검토자"><w:p><w:r><w:t>지워야 할 메모</w:t></w:r></w:p></w:comment></w:comments>'
+)
+comments_ex = '<?xml version="1.0" encoding="UTF-8"?><w15:commentsEx xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml"/>'
+
 root_rels = (
     '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
     '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>'
@@ -171,6 +198,8 @@ with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
     z.writestr("_rels/.rels", root_rels)
     z.writestr("word/document.xml", document)
     z.writestr("word/_rels/document.xml.rels", rels)
+    z.writestr("word/comments.xml", comments)
+    z.writestr("word/commentsExtended.xml", comments_ex)
     z.writestr("word/media/image1.png", png(60, 40, (40, 120, 200)))
     z.write(here / "fixtures" / "shape.wmf", "word/media/image2.wmf")
     z.write(here / "fixtures" / "shape.emf", "word/media/image3.emf")

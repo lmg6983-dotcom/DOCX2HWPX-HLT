@@ -1,7 +1,9 @@
 //! DOCX 를 고쳐 쓴다 — 변환기(hlt-core 의 DOCX 판독)가 놓치거나 깨뜨리는 것을 미리 그림 · 보통 글로 바꾼다.
 //! - 수식(OMML) → PNG 그림 (별행 수식 문단은 가운데)
 //! - WMF · EMF(OLE 수식 미리보기 · 도면) → PNG
-//! - 변경 추적: 넣은 글은 받아들이고 지운 글은 버린다 · `mc:AlternateContent` 는 한쪽만
+//! - 변경 추적은 모두 받아들이고(넣은 글 · 지운 글 · 옮긴 글 · 서식 변경 · 지운 문단 표시 · 줄/칸 넣고 지우기),
+//!   메모는 모두 지운다(본문 자리표 · comments*.xml 부분 · 관계 · 내용 형식)
+//! - `mc:AlternateContent` 는 한쪽만
 //! - `w:sym`(Symbol 글꼴) → 유니코드 글
 //! - HLT 만: NK-Editor 글자 규칙([`crate::chars`])
 
@@ -15,6 +17,7 @@ use crate::xml::{self, Element, Node};
 const DOCUMENT: &str = "word/document.xml";
 const RELS: &str = "word/_rels/document.xml.rels";
 const TYPES: &str = "[Content_Types].xml";
+const COMMENTS: &str = "word/comments.xml";
 const IMAGE_REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
 const EMU_PER_PT: f64 = 12700.0;
 /// 크기를 적지 않은 글의 크기 — hlt-core 가 HLT 본문에 쓰는 값과 같다.
@@ -31,6 +34,10 @@ pub struct Report {
     pub substitutions: HashMap<(char, String), usize>,
     pub glyph_images: HashMap<String, usize>,
     pub warnings: Warnings,
+    /// 받아들인 변경 추적 수
+    pub revisions_accepted: usize,
+    /// 지운 메모 수
+    pub comments_removed: usize,
 }
 
 struct Normalizer<'a> {
@@ -41,6 +48,9 @@ struct Normalizer<'a> {
     glyph_cache: HashMap<(String, u32), (String, f64, f64)>,
     next_id: usize,
     report: Report,
+    /// 수식 하나를 그릴 때마다 (그린 수, 모두)
+    progress: &'a mut dyn FnMut(usize, usize),
+    math_total: usize,
 }
 
 /// `nk_chars` = HLT(NK-Editor) 글자 규칙까지 적용한다.
@@ -48,6 +58,7 @@ pub fn normalize(
     docx: &[u8],
     renderer: &Renderer,
     nk_chars: bool,
+    progress: &mut dyn FnMut(usize, usize),
 ) -> Result<(Vec<u8>, Report), String> {
     let mut zip =
         zip::ZipArchive::new(Cursor::new(docx)).map_err(|e| format!("DOCX 가 아닙니다: {e}"))?;
@@ -83,6 +94,8 @@ pub fn normalize(
         glyph_cache: HashMap::new(),
         next_id: 1,
         report: Report::default(),
+        progress,
+        math_total: count_math(&document),
     };
     n.convert_metafiles(&parts);
     for (k, v) in [
@@ -99,8 +112,18 @@ pub fn normalize(
             document.attrs.push((k.into(), v.into()));
         }
     }
+    accept_revisions(&mut document, &mut n.report.revisions_accepted);
     n.walk(&mut document);
 
+    // 메모: 본문 자리표는 accept_revisions 가 지웠다. 메모 부분(comments*.xml)과 그 관계 · 내용 형식도 뺀다.
+    n.report.comments_removed = get(COMMENTS)
+        .and_then(|b| xml::parse(b).ok())
+        .map_or(0, |c| {
+            c.elements().filter(|e| e.name == "w:comment").count()
+        });
+    n.rels
+        .children
+        .retain(|r| !matches!(r, Node::El(e) if e.get("Target").is_some_and(is_comment_part)));
     let mut types = xml::parse(get(TYPES).ok_or("[Content_Types].xml 이 없습니다")?)?;
     if !types.elements().any(|e| {
         e.name == "Default"
@@ -113,6 +136,9 @@ pub fn normalize(
                 .attr("ContentType", "image/png"),
         ));
     }
+    types
+        .children
+        .retain(|t| !matches!(t, Node::El(e) if e.get("PartName").is_some_and(is_comment_part)));
     let mut replaced: Vec<(String, Vec<u8>)> = vec![
         (DOCUMENT.into(), xml::write(&document)),
         (RELS.into(), xml::write(&n.rels)),
@@ -125,7 +151,7 @@ pub fn normalize(
         .compression_method(zip::CompressionMethod::Deflated);
     for (name, bytes) in parts
         .iter()
-        .filter(|(name, _)| !replaced.iter().any(|(r, _)| r == name))
+        .filter(|(name, _)| !replaced.iter().any(|(r, _)| r == name) && !is_comment_part(name))
         .chain(replaced.iter())
     {
         out.start_file(name.as_str(), options)
@@ -200,11 +226,6 @@ impl Normalizer<'_> {
                 continue;
             };
             match child.name.as_str() {
-                "w:del" | "w:moveFrom" | "w:moveFromRangeStart" | "w:moveFromRangeEnd" => {}
-                "w:ins" | "w:moveTo" => {
-                    self.walk(&mut child);
-                    out.extend(child.children);
-                }
                 "mc:AlternateContent" => {
                     let pick = child
                         .first("mc:Choice")
@@ -323,6 +344,7 @@ impl Normalizer<'_> {
             }
         };
         self.report.equations += 1;
+        (self.progress)(self.report.equations, self.math_total);
         let id = self.add_png(png.bytes.clone());
         Some(self.image_run(&id, &png, None))
     }
@@ -604,6 +626,16 @@ fn flush(out: &mut Vec<Element>, current: &mut Element, fresh: &dyn Fn() -> Elem
     }
 }
 
+/// 그릴 수식 수(문단 수식 안의 수식은 문단 수식 하나로 센다).
+fn count_math(el: &Element) -> usize {
+    el.elements()
+        .map(|e| match e.name.as_str() {
+            "m:oMathPara" | "m:oMath" => 1,
+            _ => count_math(e),
+        })
+        .sum()
+}
+
 /// 수식 런이 적어 둔 글자 크기(`w:sz`, 하프포인트).
 fn math_size(el: &Element) -> Option<f64> {
     for child in el.elements() {
@@ -654,4 +686,130 @@ fn css_pt(style: &str, key: &str) -> f64 {
             })
         })
         .unwrap_or(0.0)
+}
+
+/// 메모 부분(comments.xml · commentsExtended.xml · commentsIds.xml · commentsExtensible.xml 과 그 관계 파일).
+/// 관계 Target(`comments.xml`) · 내용 형식 PartName(`/word/comments.xml`) · zip 이름 어느 꼴이든 받는다.
+fn is_comment_part(path: &str) -> bool {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    name.starts_with("comments") && (name.ends_with(".xml") || name.ends_with(".xml.rels"))
+}
+
+/// 변경 추적을 모두 받아들이고 메모 자리표를 지운다. `count` 에 받아들인 변경 수를 더한다.
+/// - 넣은 글 · 옮겨 온 글(`w:ins` · `w:moveTo`): 감싼 것만 벗긴다
+/// - 지운 글 · 옮겨 간 글(`w:del` · `w:moveFrom`), 지운 줄(`w:trPr/w:del`) · 지운 칸(`w:cellDel`): 버린다
+/// - 서식 변경 기록(`w:rPrChange` 등 옛 서식): 버리면 새 서식이 남는다
+/// - 지운 문단 표시(`w:pPr/w:rPr/w:del`): 그 문단을 다음 문단 앞에 붙인다(합친 문단은 다음 문단의 서식)
+fn accept_revisions(el: &mut Element, count: &mut usize) {
+    let marked = |e: &Element, props: &str, names: &[&str]| {
+        e.first(props)
+            .is_some_and(|p| p.elements().any(|c| names.contains(&c.name.as_str())))
+    };
+    let old = std::mem::take(&mut el.children);
+    let mut out = Vec::with_capacity(old.len());
+    // 문단 표시가 지워진 문단 — 다음 문단과 합칠 때까지 들고 있는다.
+    let mut carry: Option<Element> = None;
+    for node in old {
+        let Node::El(mut child) = node else {
+            out.push(node);
+            continue;
+        };
+        let name = child.name.as_str();
+        if carry.is_some() && matches!(name, "w:tbl" | "w:sdt" | "w:sectPr" | "w:customXml") {
+            out.extend(carry.take().map(Node::El)); // 문단이 아닌 것과는 합치지 않는다
+        }
+        match name {
+            "w:del" | "w:moveFrom" => *count += 1,
+            "w:ins" | "w:moveTo" => {
+                *count += 1;
+                accept_revisions(&mut child, count);
+                out.extend(child.children);
+            }
+            n if n.ends_with("PrChange")
+                || matches!(n, "w:tblGridChange" | "w:numberingChange") =>
+            {
+                *count += 1
+            }
+            "w:cellIns" | "w:cellMerge" => *count += 1,
+            "w:moveFromRangeStart"
+            | "w:moveFromRangeEnd"
+            | "w:moveToRangeStart"
+            | "w:moveToRangeEnd"
+            | "w:commentRangeStart"
+            | "w:commentRangeEnd"
+            | "w:commentReference" => {}
+            n if n.starts_with("w:customXml")
+                && (n.ends_with("RangeStart") || n.ends_with("RangeEnd")) => {}
+            "w:tr" if marked(&child, "w:trPr", &["w:del"]) => *count += 1,
+            "w:tc" if marked(&child, "w:tcPr", &["w:cellDel"]) => *count += 1,
+            "w:p" => {
+                let mark_deleted = child
+                    .first("w:pPr")
+                    .is_some_and(|p| marked(p, "w:rPr", &["w:del", "w:moveFrom"]));
+                accept_revisions(&mut child, count);
+                if let Some(previous) = carry.take() {
+                    let at = child
+                        .children
+                        .iter()
+                        .position(|n| !matches!(n, Node::El(e) if e.name == "w:pPr"))
+                        .unwrap_or(child.children.len());
+                    let runs = previous
+                        .children
+                        .into_iter()
+                        .filter(|n| !matches!(n, Node::El(e) if e.name == "w:pPr"));
+                    child.children.splice(at..at, runs);
+                }
+                if mark_deleted {
+                    carry = Some(child); // 표시 자체(w:del)는 안에서 셌다
+                } else {
+                    out.push(Node::El(child));
+                }
+            }
+            "w:r" => {
+                accept_revisions(&mut child, count);
+                // 메모 표시만 들었던 런은 비었다 — 버린다.
+                if child.elements().any(|e| e.name != "w:rPr") {
+                    out.push(Node::El(child));
+                }
+            }
+            _ => {
+                accept_revisions(&mut child, count);
+                out.push(Node::El(child));
+            }
+        }
+    }
+    out.extend(carry.map(Node::El));
+    el.children = out;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 메모는 본문 자리표뿐 아니라 부분 · 관계 · 내용 형식까지 남지 않는다.
+    #[test]
+    fn comments_leave_no_trace() {
+        let docx = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/sample.docx"
+        ))
+        .unwrap();
+        let (bytes, report) = normalize(&docx, &Renderer::new(&[]), false, &mut |_, _| {}).unwrap();
+        assert_eq!(report.comments_removed, 1);
+        let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
+        let names: Vec<String> = zip.file_names().map(str::to_string).collect();
+        assert!(!names.iter().any(|n| n.contains("comments")), "{names:?}");
+        for part in [DOCUMENT, RELS, TYPES] {
+            let mut text = String::new();
+            zip.by_name(part)
+                .unwrap()
+                .read_to_string(&mut text)
+                .unwrap();
+            assert!(!text.contains("comment"), "{part}");
+            assert!(
+                !text.contains("w:del ") && !text.contains("w:ins ") && !text.contains("Change"),
+                "{part}"
+            );
+        }
+    }
 }

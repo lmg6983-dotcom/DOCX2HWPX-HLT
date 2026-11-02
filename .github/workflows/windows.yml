@@ -1,0 +1,38 @@
+# 윈도 실행 파일 빌드: 명령줄(docx2hwpx-hlt.exe) + 화면 앱(docx2hwpx-hlt-gui.exe).
+# 결과는 Actions 실행 화면의 Artifacts 에서 zip 으로 받는다.
+name: windows
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # 윈도에서도 변환 · JSON 계약 · --overwrite(파일 바꿔 넣기)를 확인한다.
+      - name: Test
+        run: cargo test --release --locked
+
+      - name: Build
+        run: cargo build --release --locked --features gui --bins
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target/release/docx2hwpx-hlt.exe, target/release/docx2hwpx-hlt-gui.exe, README.md dist/
+          Compress-Archive -Path dist/* -DestinationPath docx2hwpx-hlt-windows-x64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docx2hwpx-hlt-windows-x64
+          path: docx2hwpx-hlt-windows-x64.zip
