@@ -1,5 +1,6 @@
 //! DOCX → HWPX(MOIP-Editor) · HLT(NK-Editor). 명령줄(`src/main.rs`)과 화면 앱(`src/bin/gui.rs`)이 함께 쓴다.
 
+pub mod image_opt;
 mod chars;
 mod hwpx;
 mod normalize;
@@ -32,6 +33,8 @@ pub enum Target {
     /// `pct` = PCT 국내진입 서식(아니면 국내 출원 명세서)
     Hlt {
         pct: bool,
+        /// 그림 해상도 상한(표시 크기 기준). 0 이면 그림을 다듬지 않는다.
+        max_dpi: u32,
     },
 }
 
@@ -102,8 +105,21 @@ pub fn convert(docx: &[u8], target: Target, font_dirs: &[PathBuf], progress: Pro
         .map(|(code, message)| json!({"code": code, "message": message}))
         .collect();
 
+    let mut images_optimized = 0;
     let result = match target {
-        Target::Hlt { pct } => hlt_bytes(&normalized, pct, &mut substitutions),
+        Target::Hlt { pct, max_dpi } => {
+            let optimized = if max_dpi == 0 {
+                Ok((normalized, 0))
+            } else {
+                image_opt::optimize(&normalized, max_dpi)
+            };
+            optimized
+                .map_err(|e| fail("convert_failed", e))
+                .and_then(|(docx, n)| {
+                    images_optimized = n;
+                    hlt_bytes(&docx, pct, &mut substitutions)
+                })
+        }
         Target::Hwpx => hwpx::convert(&normalized)
             .map(|(bytes, w)| {
                 warnings.extend(
@@ -124,6 +140,7 @@ pub fn convert(docx: &[u8], target: Target, font_dirs: &[PathBuf], progress: Pro
             "revisions_accepted": report.revisions_accepted,
             "comments_removed": report.comments_removed,
             "equations": report.equations,
+            "images_optimized": images_optimized,
             "metafiles": report.metafiles,
             "scripts": report.scripts,
             "substitutions": substitutions,

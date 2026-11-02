@@ -1166,6 +1166,7 @@ dependencies = [
  "hwpforge-core",
  "hwpforge-foundation",
  "hwpforge-smithy-hwpx",
+ "image",
  "quick-xml 0.41.0",
  "resvg",
  "rfd",
