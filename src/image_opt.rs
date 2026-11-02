@@ -161,7 +161,7 @@ mod tests {
     #[test]
     fn only_oversized_pictures_shrink() {
         let inch = EMU_PER_INCH as u64;
-        assert_eq!(resized(3000, 1500, inch * 5, 300), None);
+        assert_eq!(resized(1500, 750, inch * 5, 300), None);
         assert_eq!(resized(6000, 3000, inch * 5, 300), Some((1500, 750)));
     }
 
