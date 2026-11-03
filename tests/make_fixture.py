@@ -17,6 +17,10 @@ def t(s):
     return f'<w:r><w:t xml:space="preserve">{s}</w:t></w:r>'
 
 
+def sub(s):
+    return f'<w:r><w:rPr><w:vertAlign w:val="subscript"/></w:rPr><w:t xml:space="preserve">{s}</w:t></w:r>'
+
+
 def p(*runs, jc=None):
     ppr = f'<w:pPr><w:jc w:val="{jc}"/></w:pPr>' if jc else ""
     return f"<w:p>{ppr}{''.join(runs)}</w:p>"
@@ -142,6 +146,18 @@ body = "".join(
         p(t(" 뒷 문단")),
         # 옮기기
         p(t("【0008】 "), '<w:moveFrom w:id="12" w:author="a">' + t("옮겨 간 글") + "</w:moveFrom>", t("가운데"), '<w:moveTo w:id="13" w:author="a">' + t(" 옮겨 온 글") + "</w:moveTo>"),
+        # 긴 첨자 단어가 여러 번 든 긴 문단 — HLT 저장 줄이 첨자 · 영문 낱말 가운데서 끊기지 않아야 한다
+        p(
+            *[
+                piece
+                for _ in range(3)
+                for piece in (
+                    t("상자 정보는 좌표 묶음으로 나타낼 수 있으며, 일 예로 [(x"), sub("min"), t(", y"), sub("min"), t(", x"), sub("max"),
+                    t(", y"), sub("max"), t(", class"), sub("identifier"), t(", confidence"), sub("score"),
+                    t("), …]의 형태로 표현되고 기본 점수(Anomaly"), sub("default"), t(")가 함께 저장될 수 있다. "),
+                )
+            ]
+        ),
         p('<w:r><w:br w:type="page"/></w:r>'),
         p(t("【청구범위】")),
         p(t("【청구항 1】")),

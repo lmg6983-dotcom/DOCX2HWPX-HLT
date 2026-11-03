@@ -137,6 +137,32 @@ fn hlt_keeps_equations_tables_and_nk_characters() {
     assert!(first.text.contains("25 °C - 범위"), "{}", first.text);
     let cell = |t: &str| doc.cells.iter().any(|c| c.text.trim() == t);
     assert!(cell("첫 줄 둘째 줄") && cell("안1 | 안2"));
+    // 긴 첨자 문단: 저장 줄 경계가 영문 낱말(첨자 포함) 가운데에 오지 않는다(통특기 줄 규칙).
+    let long = doc
+        .paragraphs
+        .iter()
+        .find(|p| p.text.contains("confidencescore"))
+        .unwrap();
+    assert!(
+        long.source_line_bytes.len() > 3,
+        "{:?}",
+        long.source_line_bytes
+    );
+    let chars: Vec<char> = long.text.chars().collect();
+    let (mut at, mut bytes) = (0, 0);
+    for &line in &long.source_line_bytes[..long.source_line_bytes.len() - 1] {
+        while bytes < line {
+            bytes += if chars[at].is_ascii() { 1 } else { 2 };
+            at += 1;
+        }
+        bytes = 0;
+        let (a, b) = (chars[at - 1], chars[at]);
+        assert!(
+            !(a.is_ascii_alphanumeric() && b.is_ascii_alphanumeric()),
+            "{a}|{b}: {}",
+            long.text
+        );
+    }
     let merged = doc.cells.iter().find(|c| c.text == "세로 합침").unwrap();
     assert_eq!((merged.rowspan, merged.colspan), (2, 1));
     let texts: Vec<&str> = doc.paragraphs.iter().map(|p| p.text.as_str()).collect();
@@ -198,6 +224,56 @@ fn hwpx_keeps_equations_tables_and_text() {
     );
     assert_eq!(tables, 2, "표 + 칸 안의 표");
     assert_eq!(images, 11, "수식 6 · WMF/EMF 2 · OLE 수식 1 · PNG 2");
+
+    // 지식재산처가 고친 HWPX 에 맞춘 서식: 쪽 여백 · 바탕체 · 줄 간격 280% · 식별항목 규칙 · 런 합치기
+    let section = &decoded.document.sections()[0];
+    let page = &section.page_settings;
+    let mm = |v: hwpforge_foundation::HwpUnit| v.as_i32();
+    assert_eq!(
+        (
+            mm(page.margin_left),
+            mm(page.margin_right),
+            mm(page.margin_top),
+            mm(page.margin_bottom)
+        ),
+        (7100, 5670, 11340, 5670)
+    );
+    assert_eq!((mm(page.header_margin), mm(page.footer_margin)), (0, 0));
+    let store = &decoded.style_store;
+    assert_eq!(
+        store
+            .font(hwpforge_foundation::FontIndex::new(0))
+            .unwrap()
+            .face_name,
+        "바탕체"
+    );
+    let para = |p: &hwpforge_core::paragraph::Paragraph| store.para_shape(p.para_shape_id).unwrap();
+    for p in &section.paragraphs {
+        assert_eq!(para(p).line_spacing, 280);
+        let t = p.text_content();
+        if ["【청구범위】", "【요약서】", "【도면】"].contains(&t.trim()) {
+            assert!(p.page_break, "{t} 는 새 쪽");
+        }
+        if t.trim() == "【발명의 명칭】" {
+            assert_ne!(
+                para(p).alignment,
+                hwpforge_foundation::Alignment::Justify,
+                "식별항목은 왼쪽"
+            );
+        }
+        let texts: Vec<_> = p
+            .runs
+            .iter()
+            .filter(|r| r.content.as_text().is_some())
+            .collect();
+        assert!(
+            texts
+                .windows(2)
+                .all(|w| w[0].char_shape_id != w[1].char_shape_id)
+                || p.runs.iter().any(|r| r.content.as_text().is_none()),
+            "같은 모양 런은 합친다: {t}"
+        );
+    }
 }
 
 /// 화면 앱 게이지가 기대는 진행 알림: 줄지 않고, 수식마다 오고, 1.0 으로 끝난다.

@@ -7,7 +7,7 @@ use std::io::{Cursor, Read};
 use hwpforge_core::document::Document;
 use hwpforge_core::image::{Image, ImageStore};
 use hwpforge_core::paragraph::Paragraph;
-use hwpforge_core::run::Run;
+use hwpforge_core::run::{Run, RunContent};
 use hwpforge_core::section::Section;
 use hwpforge_core::table::{Table, TableCell, TableRow};
 use hwpforge_core::{PageSettings, ParagraphMeasure};
@@ -20,9 +20,19 @@ use hwpforge_smithy_hwpx::style_store::{HwpxCharShape, HwpxParaShape, HwpxStyleS
 use crate::normalize::DEFAULT_SIZE_PT;
 use crate::xml::{self, Element};
 
-/// A4 · 좌우 20mm 의 본문 폭(HwpUnit = 1/100pt). 이보다 넓은 그림 · 표는 줄인다.
-const TEXT_WIDTH: i32 = 48189;
-const FONT: &str = "함초롬바탕";
+// KIPO 명세서 서식(지식재산처가 고친 HWPX 에서 읽은 값): A4 · 여백 왼 25 · 오 20 · 위 40 · 아래 20mm,
+// 머리말 · 꼬리말 0, 바탕체 12pt, 줄 간격 280%.
+const PAGE_WIDTH: i32 = 59528;
+const MARGIN_LEFT: i32 = 7100;
+const MARGIN_RIGHT: i32 = 5670;
+const MARGIN_TOP: i32 = 11340;
+const MARGIN_BOTTOM: i32 = 5670;
+/// 본문 폭(HwpUnit = 1/100pt). 이보다 넓은 그림 · 표는 줄인다.
+const TEXT_WIDTH: i32 = PAGE_WIDTH - MARGIN_LEFT - MARGIN_RIGHT;
+const FONT: &str = "바탕체";
+const LINE_SPACING: i32 = 280;
+/// 새 쪽에서 시작하는 식별항목.
+const NEW_PAGE_HEADINGS: [&str; 3] = ["【청구범위】", "【요약서】", "【도면】"];
 
 #[derive(Hash, PartialEq, Eq, Clone, Copy, Default)]
 struct CharKey {
@@ -109,8 +119,16 @@ pub fn convert(docx: &[u8]) -> Result<(Vec<u8>, crate::normalize::Warnings), Str
     if paragraphs.is_empty() {
         paragraphs.push(w.empty_paragraph());
     }
+    let unit = |v: i32| HwpUnit::new(v).unwrap_or(HwpUnit::ZERO);
+    let mut page = PageSettings::a4();
+    page.margin_left = unit(MARGIN_LEFT);
+    page.margin_right = unit(MARGIN_RIGHT);
+    page.margin_top = unit(MARGIN_TOP);
+    page.margin_bottom = unit(MARGIN_BOTTOM);
+    page.header_margin = HwpUnit::ZERO;
+    page.footer_margin = HwpUnit::ZERO;
     let mut doc = Document::new();
-    doc.add_section(Section::with_paragraphs(paragraphs, PageSettings::a4()));
+    doc.add_section(Section::with_paragraphs(paragraphs, page));
     let validated = doc.validate().map_err(|e| format!("HWPX 구조 검사: {e}"))?;
     let bytes = HwpxEncoder::encode(&validated, &w.store, &w.images)
         .map_err(|e| format!("HWPX 쓰기: {e}"))?;
@@ -156,6 +174,7 @@ impl Writer {
             |v: i32| ParagraphMeasure::from_hwp_unit(HwpUnit::new(v).unwrap_or(HwpUnit::ZERO));
         shape.indent = unit(key.indent);
         shape.margin_left = unit(key.left);
+        shape.line_spacing = LINE_SPACING;
         let i = self.store.push_para_shape(shape);
         self.paras.insert(key, i);
         i
@@ -213,18 +232,25 @@ impl Writer {
             .unwrap_or(0)
             * 5;
         let left = twips("w:left").or_else(|| twips("w:start")).unwrap_or(0) * 5;
-        let ps = self.para_shape(ParaKey {
-            align,
-            indent,
-            left,
-        });
-        let page_break_before = ppr
+        let mut page_break_before = ppr
             .and_then(|x| x.first("w:pageBreakBefore"))
             .is_some_and(|e| e.get("w:val").is_none_or(on));
 
         let mut runs = Vec::new();
         let mut breaks = Vec::new();
         self.inline(p, width, &mut runs, &mut breaks);
+        // 식별항목(【발명의 명칭】 등): 양쪽 정렬이면 왼쪽으로, 【청구범위】 · 【요약서】 · 【도면】은 새 쪽에서.
+        let text: String = runs.iter().filter_map(|r| r.content.as_text()).collect();
+        let text = text.trim();
+        let heading =
+            text.starts_with('【') && text.ends_with('】') && text.matches('【').count() == 1;
+        let align = if heading && align == 3 { 0 } else { align };
+        page_break_before |= NEW_PAGE_HEADINGS.contains(&text);
+        let ps = self.para_shape(ParaKey {
+            align,
+            indent,
+            left,
+        });
         // 쪽 나눔(`w:br w:type="page"`)은 문단을 그 자리에서 나눈다.
         let mut start = 0;
         let mut first = true;
@@ -277,10 +303,25 @@ impl Writer {
         };
         let cs = self.char_shape(key);
         let mut text = String::new();
-        let flush = |text: &mut String, runs: &mut Vec<Run>| {
-            if !text.is_empty() {
-                runs.push(Run::text(std::mem::take(text), cs));
+        // Word 가 쪼갠 런(교정 · 편집 기록 경계)은 같은 글자 모양이면 앞 런에 붙인다 — 한글이 저장할 때처럼.
+        // 쪽 나눔 자리는 넘지 않는다.
+        let flush = |text: &mut String, runs: &mut Vec<Run>, breaks: &Vec<usize>| {
+            if text.is_empty() {
+                return;
             }
+            let at_break = breaks.last() == Some(&runs.len());
+            if let Some(Run {
+                content: RunContent::Text(last),
+                char_shape_id,
+            }) = runs.last_mut()
+                && *char_shape_id == cs
+                && !at_break
+            {
+                last.push_str(text);
+                text.clear();
+                return;
+            }
+            runs.push(Run::text(std::mem::take(text), cs));
         };
         for child in r.elements() {
             match child.name.as_str() {
@@ -289,12 +330,12 @@ impl Writer {
                 "w:cr" => text.push('\n'),
                 "w:noBreakHyphen" => text.push('-'),
                 "w:br" if child.get("w:type") == Some("page") => {
-                    flush(&mut text, runs);
+                    flush(&mut text, runs, breaks);
                     breaks.push(runs.len());
                 }
                 "w:br" => text.push('\n'),
                 "w:drawing" | "w:pict" | "w:object" => {
-                    flush(&mut text, runs);
+                    flush(&mut text, runs, breaks);
                     if let Some(image) = self.image(child, width) {
                         runs.push(Run::image(image, cs));
                     }
@@ -302,7 +343,7 @@ impl Writer {
                 _ => {}
             }
         }
-        flush(&mut text, runs);
+        flush(&mut text, runs, breaks);
     }
 
     fn image(&mut self, el: &Element, width: i32) -> Option<Image> {
@@ -335,9 +376,14 @@ impl Writer {
             }
             None => (0.0, 0.0),
         };
+        // 원본 화소 크기(96dpi 기준 1px = 75 HwpUnit) — 한글이 imgDim · imgClip 에 쓰는 값.
+        let pixels = image::ImageReader::new(Cursor::new(&bytes))
+            .with_guessed_format()
+            .ok()
+            .and_then(|r| r.into_dimensions().ok());
+        let extent = pixels.map(|(pw, ph)| (f64::from(pw) * 75.0, f64::from(ph) * 75.0));
         if w <= 0.0 || h <= 0.0 {
-            let (pw, ph) = png_size(&bytes).unwrap_or((96, 96));
-            (w, h) = (f64::from(pw) * 75.0, f64::from(ph) * 75.0);
+            (w, h) = extent.unwrap_or((7200.0, 7200.0));
         }
         if w > f64::from(width) {
             h *= f64::from(width) / w;
@@ -347,11 +393,9 @@ impl Writer {
         let name = format!("image{}.{ext}", self.image_count);
         self.images.insert(name.clone(), bytes);
         let unit = |v: f64| HwpUnit::new(v.round().max(1.0) as i32).ok();
-        Some(Image::from_path(
-            format!("BinData/{name}"),
-            unit(w)?,
-            unit(h)?,
-        ))
+        let mut image = Image::from_path(format!("BinData/{name}"), unit(w)?, unit(h)?);
+        image.image_extent = extent.and_then(|(ew, eh)| Some((unit(ew)?, unit(eh)?)));
+        Some(image)
     }
 
     fn table(&mut self, tbl: &Element, max_width: i32) -> Table {
@@ -514,13 +558,4 @@ fn cells(tr: &Element) -> Vec<&Element> {
 
 fn on(v: &str) -> bool {
     !matches!(v, "0" | "false" | "off")
-}
-
-/// PNG 머리의 화소 크기. 다른 형식은 모른다(None).
-fn png_size(b: &[u8]) -> Option<(u32, u32)> {
-    if b.len() > 24 && b.starts_with(b"\x89PNG") {
-        let be = |i: usize| u32::from_be_bytes(b[i..i + 4].try_into().unwrap());
-        return Some((be(16), be(20)));
-    }
-    None
 }
