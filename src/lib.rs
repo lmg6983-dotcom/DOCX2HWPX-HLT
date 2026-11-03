@@ -2,6 +2,7 @@
 
 pub mod image_opt;
 mod chars;
+mod hlt_lines;
 mod hwpx;
 mod normalize;
 mod omml;
@@ -215,7 +216,9 @@ fn hlt_from_docx(
             format!("HLT: {} ({}) {:?}", e.message, e.phase, e.details),
         )
     };
-    let (document, payloads, subs) = hlt_core::load_generation_input(docx).map_err(core)?;
+    let (mut document, payloads, subs) = hlt_core::load_generation_input(docx).map_err(core)?;
+    // 첨자 · 글 속 그림이 든 문단은 hlt-core 가 39칸마다 낱말 가운데서 끊는다 — 통특기 줄 규칙으로 미리 정한다.
+    hlt_lines::fill(&mut document);
     // 우리 글자 규칙이 먼저 거의 다 바꾸지만, hlt-core 가 마저 바꾼 것도 함께 알린다.
     substitutions.extend(subs.iter().map(|s| substitution(s.from, &s.to, s.count)));
     let dialect = if pct {

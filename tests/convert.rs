@@ -137,6 +137,32 @@ fn hlt_keeps_equations_tables_and_nk_characters() {
     assert!(first.text.contains("25 °C - 범위"), "{}", first.text);
     let cell = |t: &str| doc.cells.iter().any(|c| c.text.trim() == t);
     assert!(cell("첫 줄 둘째 줄") && cell("안1 | 안2"));
+    // 긴 첨자 문단: 저장 줄 경계가 영문 낱말(첨자 포함) 가운데에 오지 않는다(통특기 줄 규칙).
+    let long = doc
+        .paragraphs
+        .iter()
+        .find(|p| p.text.contains("confidencescore"))
+        .unwrap();
+    assert!(
+        long.source_line_bytes.len() > 3,
+        "{:?}",
+        long.source_line_bytes
+    );
+    let chars: Vec<char> = long.text.chars().collect();
+    let (mut at, mut bytes) = (0, 0);
+    for &line in &long.source_line_bytes[..long.source_line_bytes.len() - 1] {
+        while bytes < line {
+            bytes += if chars[at].is_ascii() { 1 } else { 2 };
+            at += 1;
+        }
+        bytes = 0;
+        let (a, b) = (chars[at - 1], chars[at]);
+        assert!(
+            !(a.is_ascii_alphanumeric() && b.is_ascii_alphanumeric()),
+            "{a}|{b}: {}",
+            long.text
+        );
+    }
     let merged = doc.cells.iter().find(|c| c.text == "세로 합침").unwrap();
     assert_eq!((merged.rowspan, merged.colspan), (2, 1));
     let texts: Vec<&str> = doc.paragraphs.iter().map(|p| p.text.as_str()).collect();
