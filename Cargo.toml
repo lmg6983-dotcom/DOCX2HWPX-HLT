@@ -1,6 +1,6 @@
 [package]
 name = "docx2hwpx-hlt"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 
 [[bin]]
@@ -44,3 +44,10 @@ zip = { version = "3", default-features = false, features = ["deflate"] }
 
 [profile.dev.package."*"]
 opt-level = 2
+
+# 배포 크기: 크레이트 경계를 넘어 쓰지 않는 코드를 덜어 내고 심볼을 뺀다.
+# panic = "abort" 는 쓰지 않는다 — 화면 앱이 변환 스레드의 panic 을 오류 메시지로 바꿔 보여 준다.
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = true
