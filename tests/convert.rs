@@ -98,8 +98,8 @@ fn hlt_keeps_equations_tables_and_nk_characters() {
         .collect();
     assert_eq!(
         glyphs,
-        ["U+0078 U+0302", "U+00FC", "U+0177"],
-        "x̂ · ü · ŷ 는 그림으로(글자 순)"
+        ["U+0078 U+0302", "U+00FC", "U+0177", "U+210F"],
+        "x̂ · ü · ŷ · ℏ(MT Extra) 는 그림으로(글자 순)"
     );
     assert_eq!(r["substitutions"][0]["to"], "-", "– → -");
     assert!(
@@ -110,8 +110,8 @@ fn hlt_keeps_equations_tables_and_nk_characters() {
             .any(|w| w["code"] == "nested_table_flattened")
     );
     let (doc, payloads) = hlt_core::hml_document_from_hlt(&out).unwrap();
-    // 수식 6 · WMF/EMF 2 · OLE 수식 1 · PNG 2 · 글자 그림 3(x̂ ŷ ü)
-    assert_eq!(payloads.len(), 14);
+    // 수식 6 · WMF/EMF 2 · OLE 수식 1 · PNG 2 · 글자 그림 4(x̂ ŷ ü ℏ)
+    assert_eq!(payloads.len(), 15);
     // OLE 수식은 VML 크기(60pt ≈ 21mm)대로 — 쪽 폭으로 늘지 않는다(그림 단위 0.282mm).
     let ole = doc
         .paragraphs
@@ -135,8 +135,12 @@ fn hlt_keeps_equations_tables_and_nk_characters() {
     assert!(has("2", hlt_core::CharacterFormat::Subscript), "CO₂");
     assert!(has("-3", hlt_core::CharacterFormat::Superscript), "10⁻³");
     assert!(first.text.contains("25 °C - 범위"), "{}", first.text);
-    // Symbol 글꼴 글 · 줄 안 나뉘는 하이픈 · 풀어쓴 한글 · 일본어 가운뎃점
-    assert!(first.text.contains("α®×1-2 한·끝"), "{}", first.text);
+    // Symbol 글꼴 글 · 줄 안 나뉘는 하이픈 · 풀어쓴 한글 · 일본어 가운뎃점 · 스타일로 받은 Symbol 글꼴 · ≈ → ≒
+    assert!(
+        first.text.contains("α®×1-2 한·끝 β") && first.text.contains("≒ 1"),
+        "{}",
+        first.text
+    );
     let cell = |t: &str| doc.cells.iter().any(|c| c.text.trim() == t);
     assert!(cell("첫 줄 둘째 줄") && cell("안1 | 안2"));
     // 긴 첨자 문단: 저장 줄 경계가 영문 낱말(첨자 포함) 가운데에 오지 않는다(통특기 줄 규칙).

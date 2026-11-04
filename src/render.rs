@@ -12,6 +12,9 @@ use typst_layout::PagedDocument;
 /// 300 dpi.
 const PIXEL_PER_PT: f64 = 300.0 / 72.0;
 /// 한글 글꼴 후보(윈도 · 맥 · 리눅스). 없는 이름은 Typst 가 건너뛴다.
+/// 흑백 기호 글꼴(☑ ✓ ➢ ⊕ …). 목록에 없으면 Typst 가 아무 글꼴이나 찾아 컬러 이모지(Segoe UI Emoji ·
+/// Noto Color Emoji)로 그린다 — 흑백 명세서에 파란 상자가 들어간다.
+const SYMBOLS: &str = r#""Segoe UI Symbol", "Cambria Math", "Apple Symbols", "DejaVu Sans", "Noto Sans Symbols 2", "Noto Sans Symbols", "OpenSymbol""#;
 const KOREAN: &str = r#""Batang", "BatangChe", "AppleMyungjo", "Nanum Myeongjo", "Noto Serif CJK KR", "Malgun Gothic", "Apple SD Gothic Neo", "NanumGothic", "Noto Sans CJK KR""#;
 
 pub struct Png {
@@ -58,7 +61,7 @@ impl Renderer {
         let source = format!(
             "#set page(width: auto, height: auto, margin: 0pt, fill: white)\n\
              #set text(size: {size_pt}pt, top-edge: \"ascender\", bottom-edge: \"descender\", \
-             font: (\"Libertinus Serif\", \"New Computer Modern\", \"New Computer Modern Math\", {KOREAN}))\n\
+             font: (\"Libertinus Serif\", \"New Computer Modern\", \"New Computer Modern Math\", {KOREAN}, {SYMBOLS}))\n\
              #box(inset: (x: 0.5pt))[#\"{escaped}\"]\n"
         );
         self.compile(source)

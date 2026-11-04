@@ -74,6 +74,8 @@ fn local_substitute(c: char) -> Option<&'static str> {
     Some(match c {
         // 가운뎃점 꼴(일본어 · 수학 · 하이픈 점) → ·
         '\u{30FB}' | '\u{FF65}' | '\u{2027}' | '\u{22C5}' | '\u{2E31}' => "\u{00B7}",
+        // 근사: CP949 에 ≈ 가 없다 — 국내 명세서에서 같은 뜻으로 쓰는 ≒
+        '\u{2248}' => "\u{2252}",
         // 분수 · 나눗셈 빗금 → /
         '\u{2044}' | '\u{2215}' => "/",
         _ => return None,
@@ -231,7 +233,6 @@ pub fn wingdings(code: u32) -> Option<char> {
     Some(match code {
         0x20 => ' ',
         0x6C => '●',
-        0x6D => '○',
         0x6E => '■',
         0x6F => '□',
         0x71 => '❑',
@@ -239,7 +240,6 @@ pub fn wingdings(code: u32) -> Option<char> {
         0x76 => '❖',
         0x77 => '⬥',
         0x81..=0x8A => char::from_u32(0x2460 + code - 0x81)?, // ①–⑩
-        0x9F => '•',
         0xA1 => '○',
         0xA4 => '◉',
         0xA7 => '▪',
@@ -254,12 +254,104 @@ pub fn wingdings(code: u32) -> Option<char> {
     })
 }
 
+/// MT Extra(MathType) 글꼴의 글자 자리 → 유니코드. 유니코드에 없는(사설 영역) 글자와 결합 부호는 뺐다.
+/// 대응은 LibreOffice `unotools/source/misc/fontcvt.cxx` 의 aMTExtraTab 을 따랐다.
+pub fn mt_extra(code: u32) -> Option<char> {
+    let code = if code >= 0xF000 { code - 0xF000 } else { code };
+    Some(match code {
+        0x20 => ' ',
+        0x28 => '\u{2323}', // ⌣
+        0x29 => '\u{2322}', // ⌢
+        0x3A => '\u{223C}', // ∼
+        0x3B => '\u{2243}', // ≃
+        0x3C => '\u{22B2}', // ⊲
+        0x3D => '\u{226A}', // ≪
+        0x3E => '\u{22B3}', // ⊳
+        0x3F => '\u{226B}', // ≫
+        0x40 => '\u{225C}', // ≜
+        0x41 => '\u{2259}', // ≙
+        0x42 => '\u{2250}', // ≐
+        0x43 => '\u{2210}', // ∐
+        0x44 => '\u{019B}', // ƛ
+        0x49 => '\u{2229}', // ∩
+        0x4A => '\u{2127}', // ℧
+        0x4B => '\u{2026}', // …
+        0x4C => '\u{22EF}', // ⋯
+        0x4D => '\u{22EE}', // ⋮
+        0x4E => '\u{22F0}', // ⋰
+        0x4F => '\u{22F1}', // ⋱
+        0x50 => '\u{2225}', // ∥
+        0x51 => '\u{2235}', // ∵
+        0x52 => '\u{2221}', // ∡
+        0x53 => '\u{2222}', // ∢
+        0x55 => '\u{222A}', // ∪
+        0x56 => '\u{25B3}', // △
+        0x57 => '\u{25A1}', // □
+        0x58 => '\u{25AD}', // ▭
+        0x59 => '\u{25B1}', // ▱
+        0x5A => '\u{2197}', // ↗
+        0x5B => '\u{2199}', // ↙
+        0x5D => '\u{2198}', // ↘
+        0x5E => '\u{2196}', // ↖
+        0x60 => '\u{2035}', // ‵
+        0x61 => '\u{21A6}', // ↦
+        0x62 => '\u{2195}', // ↕
+        0x63 => '\u{21D5}', // ⇕
+        0x64 => '\u{25CB}', // ○
+        0x65 => '\u{2299}', // ⊙
+        0x66 => '\u{227B}', // ≻
+        0x68 => '\u{210F}', // ℏ
+        0x6C => '\u{2113}', // ℓ
+        0x6D => '\u{2213}', // ∓
+        0x6F => '\u{2218}', // ∘
+        0x70 => '\u{227A}', // ≺
+        0x80 => '\u{21C4}', // ⇄
+        0x83 => '\u{21CC}', // ⇌
+        0x86 => '\u{21C0}', // ⇀
+        0x87 => '\u{21BD}', // ↽
+        0xA1 => '\u{211D}', // ℝ
+        0xA2 => '\u{2124}', // ℤ
+        0xA3 => '\u{2102}', // ℂ
+        0xA4 => '\u{211A}', // ℚ
+        0xA5 => '\u{2115}', // ℕ
+        0xA7 => '\u{301A}', // 〚
+        0xA8 => '\u{301B}', // 〛
+        0xE8 => '\u{0160}', // Š
+        0xE9 => '\u{00DD}', // Ý
+        0xEA => '\u{00DE}', // Þ
+        0xEB => '\u{00D0}', // Ð
+        0xEC => '\u{0161}', // š
+        0xED => '\u{00FD}', // ý
+        0xEE => '\u{00FE}', // þ
+        0xEF => '\u{00F0}', // ð
+        0xF0 => '\u{FB01}', // ﬁ
+        0xF1 => '\u{FB02}', // ﬂ
+        0xF2 => '\u{0131}', // ı
+        0xF3 => '\u{00B9}', // ¹
+        0xF4 => '\u{00B2}', // ²
+        0xF5 => '\u{00B3}', // ³
+        0xF6 => '\u{00BD}', // ½
+        0xF7 => '\u{00BC}', // ¼
+        0xF8 => '\u{00BE}', // ¾
+        0xF9 => '\u{2044}', // ⁄
+        0xFA => '\u{00A6}', // ¦
+        0xFB => '\u{02DD}', // ˝
+        0xFC => '\u{02D8}', // ˘
+        0xFD => '\u{02C7}', // ˇ
+        0xFE => '\u{02DA}', // ˚
+        0xFF => '\u{02DB}', // ˛
+        _ => return None,
+    })
+}
+
 /// 글자 자리를 글자로 바꾸는 기호 글꼴(`w:rFonts` · `w:sym w:font`).
 pub fn symbol_font_map(font: &str) -> Option<fn(u32) -> Option<char>> {
     if font.eq_ignore_ascii_case("Symbol") {
         Some(symbol_font)
     } else if font.eq_ignore_ascii_case("Wingdings") {
         Some(wingdings)
+    } else if font.eq_ignore_ascii_case("MT Extra") {
+        Some(mt_extra)
     } else {
         None
     }
@@ -295,6 +387,9 @@ mod tests {
         assert_eq!(symbol_font(0xE4), Some('™'));
         assert_eq!(wingdings(0xF0FC), Some('✓'));
         assert_eq!(wingdings(0x83), Some('③'));
+        assert_eq!(mt_extra(0xF068), Some('ℏ'));
+        assert_eq!(mt_extra(0x4C), Some('⋯'));
+        assert_eq!(split("≈"), vec![Sub('≈', "≒".into())]);
     }
 
     #[test]
