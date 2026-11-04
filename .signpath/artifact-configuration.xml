@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SignPath 의 Artifact Configuration 에 그대로 붙여 넣는다(저장소의 이 파일은 참고용 사본).
+     GitHub Actions Artifact(unsigned-exe)는 zip 이고, 그 안의 두 exe 에 Authenticode 서명을 한다. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file path="docx2hwpx-hlt-gui.exe">
+      <authenticode-sign />
+    </pe-file>
+    <pe-file path="docx2hwpx-hlt.exe">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

@@ -79,3 +79,7 @@ cargo test                                                     # 시험
 | [HwpForge](https://github.com/ai-screams/HwpForge) | HWPX 쓰기 | MIT / Apache-2.0 |
 | [Typst](https://github.com/typst/typst) | 수식, 글자 그림 | Apache-2.0 |
 | [wmf-rs](https://github.com/mythrnr/wmf-rs), emf-core, resvg | WMF/EMF 그림 변환 | MIT, MIT / Apache-2.0 |
+
+## 라이선스
+
+[MIT](LICENSE). 릴리스용 exe 코드 서명 계획과 정책은 [CODE_SIGNING.md](CODE_SIGNING.md)에 있습니다.
