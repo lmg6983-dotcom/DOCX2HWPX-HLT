@@ -1,4 +1,4 @@
-# DOCX2HWPX-HLT
+# DOCX_2_HWPX_OR_HLT
 
 워드로 쓴 특허 명세서(`.docx`)를 특허청 전자출원 편집기용 파일로 바꿔 주는 무료 도구입니다.
 
@@ -13,8 +13,8 @@
 
 설치할 필요가 없습니다. 압축을 풀고 실행하면 됩니다.
 
-- **[화면 앱 받기](https://github.com/lmg6983-dotcom/DOCX2HWPX-HLT/releases/latest/download/docx2hwpx-hlt-windows-x64.zip)**: 대부분 이것만 받으면 됩니다.
-- [명령줄 버전 받기](https://github.com/lmg6983-dotcom/DOCX2HWPX-HLT/releases/latest/download/docx2hwpx-hlt-cli-windows-x64.zip): 여러 파일을 한꺼번에 바꾸거나 자동화할 때, 또는 PCT 서식이 필요할 때 씁니다.
+- **[화면 앱 받기](https://github.com/lmg6983-dotcom/DOCX_2_HWPX_OR_HLT/releases/latest/download/docx2hwpx-hlt-windows-x64.zip)**: 대부분 이것만 받으면 됩니다.
+- [명령줄 버전 받기](https://github.com/lmg6983-dotcom/DOCX_2_HWPX_OR_HLT/releases/latest/download/docx2hwpx-hlt-cli-windows-x64.zip): 여러 파일을 한꺼번에 바꾸거나 자동화할 때, 또는 PCT 서식이 필요할 때 씁니다.
 
 처음 실행할 때 Windows가 "알 수 없는 게시자"라며 막으면 **추가 정보 → 실행**을 누르세요.
 
@@ -79,3 +79,7 @@ cargo test                                                     # 시험
 | [HwpForge](https://github.com/ai-screams/HwpForge) | HWPX 쓰기 | MIT / Apache-2.0 |
 | [Typst](https://github.com/typst/typst) | 수식, 글자 그림 | Apache-2.0 |
 | [wmf-rs](https://github.com/mythrnr/wmf-rs), emf-core, resvg | WMF/EMF 그림 변환 | MIT, MIT / Apache-2.0 |
+
+## 라이선스
+
+[MIT](LICENSE). 릴리스용 exe 코드 서명 계획과 정책은 [CODE_SIGNING.md](CODE_SIGNING.md)에 있습니다.
