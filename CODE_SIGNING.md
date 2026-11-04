@@ -11,7 +11,7 @@
 1. **신청**: https://signpath.org/apply 에서 이 저장소로 신청합니다.
    - 라이선스는 MIT입니다([LICENSE](LICENSE)).
    - 신청서에 서명 정책 URL을 적는 칸이 있으면 이 파일의 주소를 적습니다.
-     `https://github.com/lmg6983-dotcom/DOCX2HWPX-HLT/blob/main/CODE_SIGNING.md`
+     `https://github.com/lmg6983-dotcom/DOCX_2_HWPX_OR_HLT/blob/main/CODE_SIGNING.md`
    - GitHub와 SignPath 계정 모두 2단계 인증(MFA)을 켜 둡니다.
 2. **SignPath 설정** (승인 뒤 SignPath 웹에서)
    - GitHub 연동(Trusted Build System: GitHub.com)을 추가하고 이 저장소에 연결합니다.
@@ -24,7 +24,7 @@
    |---|---|---|
    | Secret | `SIGNPATH_API_TOKEN` | 2단계에서 발급한 API 토큰 |
    | Variable | `SIGNPATH_ORGANIZATION_ID` | SignPath 조직 ID |
-   | Variable | `SIGNPATH_PROJECT_SLUG` | 프로젝트 slug. 비우면 `DOCX2HWPX-HLT` |
+   | Variable | `SIGNPATH_PROJECT_SLUG` | 프로젝트 slug. 비우면 저장소 이름(`DOCX_2_HWPX_OR_HLT`) |
    | Variable | `SIGNPATH_SIGNING_POLICY_SLUG` | 서명 정책 slug. 비우면 `release-signing` |
    | Variable | `SIGNPATH_ARTIFACT_CONFIGURATION_SLUG` | (선택) 비우면 기본 설정 |
 
