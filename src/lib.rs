@@ -7,6 +7,7 @@ pub mod image_opt;
 mod normalize;
 mod omml;
 mod render;
+mod shapes;
 mod xml;
 
 use std::path::{Path, PathBuf};
@@ -143,6 +144,7 @@ pub fn convert(docx: &[u8], target: Target, font_dirs: &[PathBuf], progress: Pro
             "equations": report.equations,
             "images_optimized": images_optimized,
             "metafiles": report.metafiles,
+            "shapes": report.shapes,
             "scripts": report.scripts,
             "substitutions": substitutions,
             "glyph_images": glyphs,

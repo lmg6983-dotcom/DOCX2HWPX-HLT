@@ -137,6 +137,27 @@ pub fn metafile_to_png(bytes: &[u8], is_emf: bool) -> Result<Vec<u8>, String> {
     svg_to_png(&svg)
 }
 
+/// Word 도형을 모은 SVG([`crate::shapes`]) → 300dpi PNG(긴 변 4000px 까지).
+pub fn shapes_to_png(svg: &str, width_pt: f64, height_pt: f64) -> Result<Vec<u8>, String> {
+    let mut options = resvg::usvg::Options::default();
+    options.fontdb_mut().load_system_fonts();
+    let tree =
+        resvg::usvg::Tree::from_data(svg.as_bytes(), &options).map_err(|e| format!("SVG: {e}"))?;
+    let px = |pt: f64| pt / 72.0 * 300.0;
+    let fit = (4000.0 / px(width_pt).max(px(height_pt))).min(1.0);
+    let width = ((px(width_pt) * fit).ceil() as u32).max(1);
+    let height = ((px(height_pt) * fit).ceil() as u32).max(1);
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height).ok_or("SVG 크기")?;
+    pixmap.fill(resvg::tiny_skia::Color::WHITE);
+    let size = tree.size();
+    let transform = resvg::tiny_skia::Transform::from_scale(
+        width as f32 / size.width(),
+        height as f32 / size.height(),
+    );
+    resvg::render(&tree, transform, &mut pixmap.as_mut());
+    pixmap.encode_png().map_err(|e| e.to_string())
+}
+
 fn svg_to_png(svg: &[u8]) -> Result<Vec<u8>, String> {
     let mut options = resvg::usvg::Options::default();
     options.fontdb_mut().load_system_fonts(); // 그림 속 글자

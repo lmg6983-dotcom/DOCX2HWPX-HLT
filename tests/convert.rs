@@ -31,6 +31,8 @@ fn convert(to: &str) -> (PathBuf, serde_json::Value) {
     assert_eq!(r["ok"], true);
     assert_eq!(r["equations"], 6, "{r}");
     assert_eq!(r["metafiles"], 2, "{r}");
+    // 그룹 도형(그림 · 고리 경로 · 화살표 · 글상자) 하나 → 그림 한 장
+    assert_eq!(r["shapes"], 1, "{r}");
     // 넣기 · 지우기 · 지운 줄 · 서식 변경 · 지운 문단 표시 · 옮겨 간 글 · 옮겨 온 글
     assert_eq!(r["revisions_accepted"], 7, "{r}");
     assert_eq!(r["comments_removed"], 1, "{r}");
@@ -110,8 +112,8 @@ fn hlt_keeps_equations_tables_and_nk_characters() {
             .any(|w| w["code"] == "nested_table_flattened")
     );
     let (doc, payloads) = hlt_core::hml_document_from_hlt(&out).unwrap();
-    // 수식 6 · WMF/EMF 2 · OLE 수식 1 · PNG 2 · 글자 그림 4(x̂ ŷ ü ℏ)
-    assert_eq!(payloads.len(), 15);
+    // 수식 6 · WMF/EMF 2 · OLE 수식 1 · PNG 2 · 글자 그림 4(x̂ ŷ ü ℏ) · 그룹 도형 1
+    assert_eq!(payloads.len(), 16);
     // OLE 수식은 VML 크기(60pt ≈ 21mm)대로 — 쪽 폭으로 늘지 않는다(그림 단위 0.282mm).
     let ole = doc
         .paragraphs
@@ -229,7 +231,10 @@ fn hwpx_keeps_equations_tables_and_text() {
         "{text}"
     );
     assert_eq!(tables, 2, "표 + 칸 안의 표");
-    assert_eq!(images, 11, "수식 6 · WMF/EMF 2 · OLE 수식 1 · PNG 2");
+    assert_eq!(
+        images, 12,
+        "수식 6 · WMF/EMF 2 · OLE 수식 1 · PNG 2 · 그룹 도형 1"
+    );
 
     // 지식재산처가 고친 HWPX 에 맞춘 서식: 쪽 여백 · 바탕체 · 줄 간격 280% · 식별항목 규칙 · 런 합치기
     let section = &decoded.document.sections()[0];
