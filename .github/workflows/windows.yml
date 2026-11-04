@@ -1,16 +1,26 @@
 # 윈도 실행 파일 빌드: 명령줄(docx2hwpx-hlt.exe) + 화면 앱(docx2hwpx-hlt-gui.exe).
 # 결과는 Actions 실행 화면의 Artifacts 에서 zip 으로 받는다.
+# v* 태그를 올리거나, 수동 실행(workflow_dispatch)에서 release 에 v0.1.0 같은 이름을 넣으면
+# 같은 zip 을 붙인 GitHub 릴리스도 만든다(수동 실행이면 그 커밋에 태그도 만든다).
 name: windows
 
 on:
   push:
     branches: [main, "claude/**"]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      release:
+        description: "릴리스 태그(예: v0.1.0). 비우면 빌드만 한다"
+        required: false
+        default: ""
 
 jobs:
   build:
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -25,14 +35,33 @@ jobs:
       - name: Build
         run: cargo build --release --locked --features gui --bins
 
+      # 화면 앱 zip(일반 사용자용, 이름 그대로 — 기존 다운로드 링크 유지)과 명령줄 zip 을 따로 낸다.
       - name: Package
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item target/release/docx2hwpx-hlt.exe, target/release/docx2hwpx-hlt-gui.exe, README.md dist/
-          Compress-Archive -Path dist/* -DestinationPath docx2hwpx-hlt-windows-x64.zip
+          New-Item -ItemType Directory -Force gui, cli | Out-Null
+          Copy-Item target/release/docx2hwpx-hlt-gui.exe, README.md gui/
+          Copy-Item target/release/docx2hwpx-hlt.exe, README.md, AGENTS.md cli/
+          Compress-Archive -CompressionLevel Optimal -Path gui/* -DestinationPath docx2hwpx-hlt-windows-x64.zip
+          Compress-Archive -CompressionLevel Optimal -Path cli/* -DestinationPath docx2hwpx-hlt-cli-windows-x64.zip
+          Get-ChildItem target/release/*.exe, *.zip | ForEach-Object { "{0}  {1:N1} MB" -f $_.Name, ($_.Length / 1MB) }
 
       - uses: actions/upload-artifact@v4
         with:
           name: docx2hwpx-hlt-windows-x64
-          path: docx2hwpx-hlt-windows-x64.zip
+          path: |
+            docx2hwpx-hlt-windows-x64.zip
+            docx2hwpx-hlt-cli-windows-x64.zip
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v') || startsWith(inputs.release, 'v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || inputs.release }}
+        run: >
+          gh release create "$env:TAG" docx2hwpx-hlt-windows-x64.zip docx2hwpx-hlt-cli-windows-x64.zip
+          --repo "${{ github.repository }}"
+          --target "${{ github.sha }}"
+          --title "DOCX2HWPX-HLT $env:TAG"
+          --notes-file .github/release-notes.md
