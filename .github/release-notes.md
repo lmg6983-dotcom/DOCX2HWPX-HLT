@@ -1,4 +1,6 @@
-워드 명세서(`.docx`)를 특허청 편집기용 파일로 바꾸는 도구의 첫 공개판입니다.
+워드 명세서(`.docx`)를 특허청 편집기용 파일로 바꾸는 도구입니다.
+
+v0.1.1: 화면 앱과 명령줄을 따로 묶고 빌드를 최적화해 내려받을 크기를 줄였습니다. 변환 결과는 v0.1.0 과 같습니다.
 
 | 출력 | 읽는 곳 |
 |---|---|
@@ -7,10 +9,10 @@
 
 ## 받기 (윈도 64비트)
 
-`docx2hwpx-hlt-windows-x64.zip` 을 받아 압축을 풀면 됩니다. 설치는 필요 없습니다.
+압축을 풀면 됩니다. 설치는 필요 없습니다.
 
-- `docx2hwpx-hlt-gui.exe` — 화면 앱. DOCX 를 끌어다 놓고 HLT/HWPX 를 고른 뒤 「변환」
-- `docx2hwpx-hlt.exe` — 명령줄 (`docx2hwpx-hlt 명세서.docx --to hlt`)
+- **`docx2hwpx-hlt-windows-x64.zip`** — 화면 앱(`docx2hwpx-hlt-gui.exe`). 대부분 이것만 받으면 됩니다. DOCX 를 끌어다 놓고 HLT/HWPX 를 고른 뒤 「변환」
+- `docx2hwpx-hlt-cli-windows-x64.zip` — 명령줄(`docx2hwpx-hlt.exe 명세서.docx --to hlt`). 일괄 변환 · 자동화 · PCT 서식(`--pct`)용
 
 처음 실행할 때 Windows SmartScreen 이 「알 수 없는 게시자」라고 막으면 「추가 정보 → 실행」을 누릅니다(코드 서명을 하지 않았습니다).
 
