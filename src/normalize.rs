@@ -18,6 +18,7 @@ const DOCUMENT: &str = "word/document.xml";
 const RELS: &str = "word/_rels/document.xml.rels";
 const TYPES: &str = "[Content_Types].xml";
 const COMMENTS: &str = "word/comments.xml";
+const STYLES: &str = "word/styles.xml";
 const IMAGE_REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
 const EMU_PER_PT: f64 = 12700.0;
 /// 크기를 적지 않은 글의 크기 — hlt-core 가 HLT 본문에 쓰는 값과 같다.
@@ -115,6 +116,9 @@ pub fn normalize(
         }
     }
     accept_revisions(&mut document, &mut n.report.revisions_accepted);
+    if let Some(styles) = get(STYLES).and_then(|b| xml::parse(b).ok()) {
+        apply_style_symbol_fonts(&mut document, &style_fonts(&styles));
+    }
     n.walk(&mut document);
 
     // 메모: 본문 자리표는 accept_revisions 가 지웠다. 메모 부분(comments*.xml)과 그 관계 · 내용 형식도 뺀다.
@@ -268,6 +272,8 @@ impl Normalizer<'_> {
                 },
                 "w:r" => {
                     self.walk(&mut child);
+                    special_chars(&mut child);
+                    self.symbol_font_text(&mut child);
                     self.symbols(&mut child);
                     if self.nk_chars {
                         out.extend(self.split_run(child).into_iter().map(Node::El));
@@ -456,7 +462,64 @@ impl Normalizer<'_> {
         run.child(Element::new("w:drawing").child(inline))
     }
 
-    /// `w:sym` → `w:t`. Symbol 글꼴만 안다.
+    /// 글꼴이 Symbol · Wingdings 인 런의 글(`a` 가 α, `Ò` 가 ®, U+F061 이 α 로 보인다) → 실제 유니코드 글자.
+    /// Word 밖에서 붙여 넣은 글 · 옛 문서에 흔하다. 그대로 두면 HLT/HWPX 에서는 글꼴이 빠져 `a` · `Ò` 로 남는다.
+    /// 바꾼 뒤 그 글꼴은 런에서 뗀다(바꾼 글자를 다시 기호 글꼴로 그리지 않게).
+    fn symbol_font_text(&mut self, run: &mut Element) {
+        let Some(font) = run
+            .first("w:rPr")
+            .and_then(|p| p.first("w:rFonts"))
+            .and_then(|f| {
+                f.get("w:ascii")
+                    .or_else(|| f.get("w:hAnsi"))
+                    .or_else(|| f.get("w:cs"))
+            })
+            .map(str::to_string)
+        else {
+            return;
+        };
+        let Some(map) = chars::symbol_font_map(&font) else {
+            return;
+        };
+        let mut unmapped = Vec::new();
+        for node in &mut run.children {
+            let Node::El(el) = node else { continue };
+            if el.name != "w:t" {
+                continue;
+            }
+            let text: String = el
+                .text()
+                .chars()
+                .map(|c| {
+                    let code = c as u32;
+                    if !(0x20..=0xFF).contains(&code) && !(0xF020..=0xF0FF).contains(&code) {
+                        return c;
+                    }
+                    map(code).unwrap_or_else(|| {
+                        unmapped.push(code);
+                        c
+                    })
+                })
+                .collect();
+            *el = text_el(&text);
+        }
+        for code in unmapped {
+            self.report.warnings.push((
+                "symbol_unmapped",
+                format!("{font} 글꼴 기호 U+{code:04X} 는 옮기지 못했습니다"),
+            ));
+        }
+        if let Some(Node::El(rpr)) = run
+            .children
+            .iter_mut()
+            .find(|n| matches!(n, Node::El(e) if e.name == "w:rPr"))
+        {
+            rpr.children
+                .retain(|n| !matches!(n, Node::El(e) if e.name == "w:rFonts"));
+        }
+    }
+
+    /// `w:sym` → `w:t`. Symbol · Wingdings 글꼴만 안다.
     fn symbols(&mut self, run: &mut Element) {
         for node in &mut run.children {
             let Node::El(el) = node else { continue };
@@ -468,11 +531,7 @@ impl Normalizer<'_> {
                 .get("w:char")
                 .and_then(|c| u32::from_str_radix(c, 16).ok())
                 .unwrap_or(0);
-            let text = if font.eq_ignore_ascii_case("Symbol") {
-                chars::symbol_font(code)
-            } else {
-                None
-            };
+            let text = chars::symbol_font_map(&font).and_then(|map| map(code));
             match text {
                 Some(c) => *el = Element::new("w:t").text_child(&c.to_string()),
                 None => self.report.warnings.push((
@@ -614,6 +673,116 @@ fn inline_runs(block: &Element, out: &mut Vec<Node>, nested: &mut bool) {
             _ => inline_runs(child, out, nested),
         }
     }
+}
+
+/// 스타일 id → 그 스타일(과 basedOn 조상)이 정한 글꼴(`w:rFonts` 의 ascii · hAnsi).
+fn style_fonts(styles: &Element) -> HashMap<String, Option<String>> {
+    let mut own: HashMap<String, (Option<String>, Option<String>)> = HashMap::new();
+    for style in styles.elements().filter(|e| e.name == "w:style") {
+        let Some(id) = style.get("w:styleId") else {
+            continue;
+        };
+        let font = style
+            .first("w:rPr")
+            .and_then(|p| p.first("w:rFonts"))
+            .and_then(|f| f.get("w:ascii").or_else(|| f.get("w:hAnsi")))
+            .map(str::to_string);
+        let based = style.prop("w:basedOn", "w:val").map(str::to_string);
+        own.insert(id.to_string(), (font, based));
+    }
+    own.keys()
+        .map(|id| {
+            let mut at = Some(id.clone());
+            let mut font = None;
+            for _ in 0..32 {
+                let Some((f, based)) = at.as_ref().and_then(|a| own.get(a)) else {
+                    break;
+                };
+                if f.is_some() {
+                    font = f.clone();
+                    break;
+                }
+                at = based.clone();
+            }
+            (id.clone(), font)
+        })
+        .collect()
+}
+
+/// 스타일로만 Symbol · Wingdings · MT Extra 글꼴을 받은 런에 그 글꼴을 직접 단다 — 그래야 `symbol_font_text` 가
+/// 글자를 바꾼다. 런에 직접 단 글꼴이 있으면 그것이 이긴다. 글자 스타일이 다른 글꼴을 정하면 문단 스타일보다 앞선다.
+fn apply_style_symbol_fonts(el: &mut Element, fonts: &HashMap<String, Option<String>>) {
+    if !fonts
+        .values()
+        .flatten()
+        .any(|f| chars::symbol_font_map(f).is_some())
+    {
+        return;
+    }
+    fn runs(el: &mut Element, paragraph: Option<&str>, fonts: &HashMap<String, Option<String>>) {
+        for node in &mut el.children {
+            let Node::El(child) = node else { continue };
+            match child.name.as_str() {
+                "w:p" => {
+                    let style = child
+                        .first("w:pPr")
+                        .and_then(|p| p.prop("w:pStyle", "w:val"))
+                        .and_then(|id| fonts.get(id).cloned().flatten());
+                    runs(child, style.as_deref(), fonts);
+                }
+                "w:r" => {
+                    let rpr = child.first("w:rPr");
+                    let direct = rpr
+                        .and_then(|p| p.first("w:rFonts"))
+                        .is_some_and(|f| f.get("w:ascii").is_some() || f.get("w:hAnsi").is_some());
+                    if direct {
+                        continue;
+                    }
+                    let font = rpr
+                        .and_then(|p| p.prop("w:rStyle", "w:val"))
+                        .and_then(|id| fonts.get(id).cloned().flatten())
+                        .or_else(|| paragraph.map(str::to_string));
+                    let Some(font) = font.filter(|f| chars::symbol_font_map(f).is_some()) else {
+                        continue;
+                    };
+                    if child.first("w:rPr").is_none() {
+                        child.children.insert(0, Node::El(Element::new("w:rPr")));
+                    }
+                    if let Some(Node::El(rpr)) = child
+                        .children
+                        .iter_mut()
+                        .find(|n| matches!(n, Node::El(e) if e.name == "w:rPr"))
+                    {
+                        rpr.children
+                            .retain(|n| !matches!(n, Node::El(e) if e.name == "w:rFonts"));
+                        rpr.children.insert(
+                            0,
+                            Node::El(
+                                Element::new("w:rFonts")
+                                    .attr("w:ascii", &font)
+                                    .attr("w:hAnsi", &font),
+                            ),
+                        );
+                    }
+                }
+                _ => runs(child, paragraph, fonts),
+            }
+        }
+    }
+    runs(el, None, fonts);
+}
+
+/// 글자 대신 쓰는 Word 요소: 줄 안 나뉘는 하이픈(Ctrl+Shift+-) → `-`, 선택 하이픈 → 지움.
+/// hlt-core · HwpForge 는 이 요소를 읽지 않아 `1‑2` 가 `12` 가 된다.
+fn special_chars(run: &mut Element) {
+    run.children.retain_mut(|node| match node {
+        Node::El(el) if el.name == "w:noBreakHyphen" => {
+            *el = text_el("-");
+            true
+        }
+        Node::El(el) => el.name != "w:softHyphen",
+        Node::Text(_) => true,
+    });
 }
 
 fn text_el(t: &str) -> Element {

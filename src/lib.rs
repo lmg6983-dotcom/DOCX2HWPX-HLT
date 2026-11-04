@@ -1,9 +1,9 @@
 //! DOCX → HWPX(MOIP-Editor) · HLT(NK-Editor). 명령줄(`src/main.rs`)과 화면 앱(`src/bin/gui.rs`)이 함께 쓴다.
 
-pub mod image_opt;
 mod chars;
 mod hlt_lines;
 mod hwpx;
+pub mod image_opt;
 mod normalize;
 mod omml;
 mod render;

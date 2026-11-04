@@ -90,13 +90,24 @@ pub fn optimize(docx: &[u8], max_dpi: u32) -> Result<(Vec<u8>, usize), String> {
         file.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
         parts.push((file.name().to_string(), bytes));
     }
-    let get = |name: &str| parts.iter().find(|(n, _)| n == name).map(|(_, b)| b.as_slice());
+    let get = |name: &str| {
+        parts
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, b)| b.as_slice())
+    };
     let rels = xml::parse(get(RELS).ok_or("관계 파일이 없습니다")?)?;
     let targets: HashMap<String, String> = rels
         .elements()
         .filter_map(|r| {
             let target = r.get("Target")?;
-            Some((r.get("Id")?.to_string(), format!("word/{}", target.trim_start_matches('/').trim_start_matches("word/"))))
+            Some((
+                r.get("Id")?.to_string(),
+                format!(
+                    "word/{}",
+                    target.trim_start_matches('/').trim_start_matches("word/")
+                ),
+            ))
         })
         .collect();
     let document = xml::parse(get(DOCUMENT).ok_or("본문이 없습니다")?)?;
@@ -105,17 +116,23 @@ pub fn optimize(docx: &[u8], max_dpi: u32) -> Result<(Vec<u8>, usize), String> {
 
     let mut count = 0;
     let mut out = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
     for (name, bytes) in &parts {
         let cx = widths.get(name).copied();
-        let rendered = name.rsplit('/').next().is_some_and(|n| n.starts_with("d2h_"));
+        let rendered = name
+            .rsplit('/')
+            .next()
+            .is_some_and(|n| n.starts_with("d2h_"));
         let new = match cx {
             Some(cx) if !rendered => shrink(bytes, cx, max_dpi),
             _ => None,
         };
         count += usize::from(new.is_some());
-        out.start_file(name.as_str(), options).map_err(|e| e.to_string())?;
-        out.write_all(new.as_deref().unwrap_or(bytes)).map_err(|e| e.to_string())?;
+        out.start_file(name.as_str(), options)
+            .map_err(|e| e.to_string())?;
+        out.write_all(new.as_deref().unwrap_or(bytes))
+            .map_err(|e| e.to_string())?;
     }
     Ok((out.finish().map_err(|e| e.to_string())?.into_inner(), count))
 }
@@ -127,7 +144,9 @@ fn shrink(bytes: &[u8], cx: u64, max_dpi: u32) -> Option<Vec<u8>> {
         None => decoded,
     };
     let mut png = Vec::new();
-    clean(&decoded.to_rgb8()).write_to(&mut Cursor::new(&mut png), ImageFormat::Png).ok()?;
+    clean(&decoded.to_rgb8())
+        .write_to(&mut Cursor::new(&mut png), ImageFormat::Png)
+        .ok()?;
     Some(png)
 }
 
@@ -144,7 +163,7 @@ mod tests {
         assert!(matches!(out, DynamicImage::ImageLuma8(_)));
         let luma = out.to_luma8();
         assert_eq!(luma.get_pixel(0, 0).0, [255]);
-        assert_eq!(luma.get_pixel(1, 0).0 , [quantize(100)]);
+        assert_eq!(luma.get_pixel(1, 0).0, [quantize(100)]);
     }
 
     #[test]
