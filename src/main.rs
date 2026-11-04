@@ -55,7 +55,9 @@ fn parse_args(raw: &[String]) -> Result<Parsed, String> {
             "-o" | "--output" => output = Some(PathBuf::from(value()?)),
             "--font-dir" => font_dirs.push(PathBuf::from(value()?)),
             "--image-dpi" => {
-                max_dpi = value()?.parse().map_err(|_| "--image-dpi 는 정수입니다".to_string())?;
+                max_dpi = value()?
+                    .parse()
+                    .map_err(|_| "--image-dpi 는 정수입니다".to_string())?;
             }
             "--pct" => pct = true,
             "--overwrite" => overwrite = true,

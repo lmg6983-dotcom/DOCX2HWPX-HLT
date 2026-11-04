@@ -115,7 +115,10 @@ body = "".join(
         p(t("【발명의 명칭】")),
         p(t("시험용 발명")),
         p(t("【기술분야】")),
-        p(t("【0001】 CO₂ 농도 10⁻³ mol/m³, 25 °C – 범위, x̂ 와 ŷ, Müller 법, 기호 "), '<w:r><w:sym w:font="Symbol" w:char="F062"/></w:r>', t(" 및 Hₙ.")),
+        p(t("【0001】 CO₂ 농도 10⁻³ mol/m³, 25 °C – 범위, x̂ 와 ŷ, Müller 법, 기호 "), '<w:r><w:sym w:font="Symbol" w:char="F062"/></w:r>', t(" 및 Hₙ. "),
+          # Symbol 글꼴 글(a → α · Ò → ® · U+F0B4 → ×), 줄 안 나뉘는 하이픈, 풀어쓴 한글, 일본어 가운뎃점
+          '<w:r><w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol"/></w:rPr><w:t>a\u00d2\uf0b4</w:t></w:r>',
+          '<w:r><w:t>1</w:t><w:noBreakHyphen/><w:t>2</w:t></w:r>', t(" \u1112\u1161\u11ab\u30fb끝")),
         p(t("【0002】 식 "), omath(ssup(mr("x"), mr("2")), mr("+"), ssub(mr("y"), mr("1"))), t(" 은 본문 수식이다. 수정 "), '<w:ins w:id="1" w:author="a">' + t("넣은 글") + "</w:ins>", '<w:del w:id="2" w:author="a"><w:r><w:delText>지운 글</w:delText></w:r></w:del>', t(".")),
         *equations,
         p(t("【0003】 표는 다음과 같다.")),

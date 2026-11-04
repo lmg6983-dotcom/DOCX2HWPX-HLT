@@ -135,6 +135,8 @@ fn hlt_keeps_equations_tables_and_nk_characters() {
     assert!(has("2", hlt_core::CharacterFormat::Subscript), "CO₂");
     assert!(has("-3", hlt_core::CharacterFormat::Superscript), "10⁻³");
     assert!(first.text.contains("25 °C - 범위"), "{}", first.text);
+    // Symbol 글꼴 글 · 줄 안 나뉘는 하이픈 · 풀어쓴 한글 · 일본어 가운뎃점
+    assert!(first.text.contains("α®×1-2 한·끝"), "{}", first.text);
     let cell = |t: &str| doc.cells.iter().any(|c| c.text.trim() == t);
     assert!(cell("첫 줄 둘째 줄") && cell("안1 | 안2"));
     // 긴 첨자 문단: 저장 줄 경계가 영문 낱말(첨자 포함) 가운데에 오지 않는다(통특기 줄 규칙).

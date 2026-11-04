@@ -21,8 +21,37 @@ pub fn encodable(c: char) -> bool {
     !EUC_KR.encode(c.encode_utf8(&mut buf)).2
 }
 
+/// 앞 글자에 붙어 한 글자 그림이 되는 것: 결합 부호, 옛한글 중성 · 종성 자모, 방점.
 fn combining(c: char) -> bool {
-    matches!(c, '\u{0300}'..='\u{036F}' | '\u{1AB0}'..='\u{1AFF}' | '\u{1DC0}'..='\u{1DFF}' | '\u{20D0}'..='\u{20FF}' | '\u{FE20}'..='\u{FE2F}')
+    matches!(c, '\u{0300}'..='\u{036F}' | '\u{1AB0}'..='\u{1AFF}' | '\u{1DC0}'..='\u{1DFF}' | '\u{20D0}'..='\u{20FF}' | '\u{FE20}'..='\u{FE2F}'
+        | '\u{1160}'..='\u{11FF}' | '\u{D7B0}'..='\u{D7FF}' | '\u{302E}' | '\u{302F}')
+}
+
+/// 이체 선택자(보이지 않는 모양 힌트, ✔︎ · 葛󠄀 의 뒷부분) — 지운다.
+fn variation_selector(c: char) -> bool {
+    matches!(c, '\u{FE00}'..='\u{FE0F}' | '\u{E0100}'..='\u{E01EF}')
+}
+
+/// 풀어쓴 현대 한글 자모(macOS · 일부 PDF 복사에서 온 NFD) → 완성형 음절. 옛한글은 그대로 둔다.
+pub fn compose_hangul(text: &str) -> String {
+    let mut out: Vec<char> = Vec::with_capacity(text.len());
+    for c in text.chars() {
+        let last = out.last().copied();
+        match (last, c) {
+            (Some(l @ '\u{1100}'..='\u{1112}'), '\u{1161}'..='\u{1175}') => {
+                let s = 0xAC00 + ((l as u32 - 0x1100) * 21 + (c as u32 - 0x1161)) * 28;
+                *out.last_mut().unwrap() = char::from_u32(s).unwrap();
+            }
+            (Some(s @ '\u{AC00}'..='\u{D7A3}'), '\u{11A8}'..='\u{11C2}')
+                if (s as u32 - 0xAC00).is_multiple_of(28) =>
+            {
+                let t = s as u32 + (c as u32 - 0x11A7);
+                *out.last_mut().unwrap() = char::from_u32(t).unwrap();
+            }
+            _ => out.push(c),
+        }
+    }
+    out.into_iter().collect()
 }
 
 const SUPERS: &str = "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁿⁱᵃᵇᶜᵈᵉᶠᵍʰʲᵏˡᵐᵒᵖʳˢᵗᵘᵛʷˣʸᶻᴬᴮᴰᴱᴳᴴᴵᴶᴷᴸᴹᴺᴼᴾᴿᵀᵁⱽᵂᵅᵝᵞᵟᵋᶿᵠᵡ";
@@ -40,8 +69,22 @@ fn script(c: char) -> Option<(char, bool)> {
     find(SUPERS, SUPER_BASE, true).or_else(|| find(SUBS, SUB_BASE, false))
 }
 
+/// hlt-core 대응표에 없는, 모양이 같은 CP949 글자.
+fn local_substitute(c: char) -> Option<&'static str> {
+    Some(match c {
+        // 가운뎃점 꼴(일본어 · 수학 · 하이픈 점) → ·
+        '\u{30FB}' | '\u{FF65}' | '\u{2027}' | '\u{22C5}' | '\u{2E31}' => "\u{00B7}",
+        // 분수 · 나눗셈 빗금 → /
+        '\u{2044}' | '\u{2215}' => "/",
+        _ => return None,
+    })
+}
+
 /// 모양이 같은 CP949 글자. 악센트를 떼는 대응(é → e)은 뜻이 바뀌니 받지 않는다 — 그림으로 간다.
 fn substitute(c: char) -> Option<String> {
+    if let Some(text) = local_substitute(c) {
+        return Some(text.to_string());
+    }
     let (text, _, unresolved) = hlt_core::cp949_safe_text(&c.to_string());
     if !unresolved.is_empty() || text.chars().any(|v| !encodable(v)) {
         return None;
@@ -54,7 +97,7 @@ fn substitute(c: char) -> Option<String> {
 
 pub fn split(text: &str) -> Vec<Piece> {
     let mut out: Vec<Piece> = Vec::new();
-    let chars: Vec<char> = text.chars().collect();
+    let chars: Vec<char> = compose_hangul(text).chars().collect();
     let mut i = 0;
     while i < chars.len() {
         let c = chars[i];
@@ -64,7 +107,9 @@ pub fn split(text: &str) -> Vec<Piece> {
         }
         let cluster: String = chars[i..end].iter().collect();
         i = end;
-        let piece = if cluster.chars().count() > 1 {
+        let piece = if variation_selector(c) {
+            Piece::Sub(c, String::new())
+        } else if cluster.chars().count() > 1 {
             Piece::Image(cluster)
         } else if let Some((base, up)) = script(c) {
             Piece::Script(base.to_string(), up)
@@ -102,6 +147,31 @@ pub fn symbol_font(code: u32) -> Option<char> {
         0x5C => '∴',
         0x5E => '⊥',
         0x7E => '∼',
+        0x5B => '[',
+        0x5D => ']',
+        0x5F => '_',
+        0x60 => '‾',
+        0x7B => '{',
+        0x7C => '|',
+        0x7D => '}',
+        0xA1 => 'ϒ',
+        0xA4 => '⁄',
+        0xA6 => 'ƒ',
+        0xA7 => '♣',
+        0xA8 => '♦',
+        0xA9 => '♥',
+        0xAA => '♠',
+        0xBF => '↵',
+        0xC0 => 'ℵ',
+        0xC1 => 'ℑ',
+        0xC2 => 'ℜ',
+        0xC3 => '℘',
+        0xCB => '⊄',
+        // 세리프 · 산세리프 두 벌
+        0xD2 | 0xE2 => '®',
+        0xD3 | 0xE3 => '©',
+        0xD4 | 0xE4 => '™',
+        0xE0 => '◊',
         0xA2 => '′',
         0xA3 => '≤',
         0xA5 => '∞',
@@ -155,6 +225,46 @@ pub fn symbol_font(code: u32) -> Option<char> {
     Some(c)
 }
 
+/// Wingdings 글꼴의 글자 자리 → 유니코드(명세서에 자주 나오는 글머리표 · 확인 표시만).
+pub fn wingdings(code: u32) -> Option<char> {
+    let code = if code >= 0xF000 { code - 0xF000 } else { code };
+    Some(match code {
+        0x20 => ' ',
+        0x6C => '●',
+        0x6D => '○',
+        0x6E => '■',
+        0x6F => '□',
+        0x71 => '❑',
+        0x75 => '◆',
+        0x76 => '❖',
+        0x77 => '⬥',
+        0x81..=0x8A => char::from_u32(0x2460 + code - 0x81)?, // ①–⑩
+        0x9F => '•',
+        0xA1 => '○',
+        0xA4 => '◉',
+        0xA7 => '▪',
+        0xA8 => '◻',
+        0xD8 => '➢',
+        0xE8 => '➔',
+        0xFB => '✗',
+        0xFC => '✓',
+        0xFD => '☒',
+        0xFE => '☑',
+        _ => return None,
+    })
+}
+
+/// 글자 자리를 글자로 바꾸는 기호 글꼴(`w:rFonts` · `w:sym w:font`).
+pub fn symbol_font_map(font: &str) -> Option<fn(u32) -> Option<char>> {
+    if font.eq_ignore_ascii_case("Symbol") {
+        Some(symbol_font)
+    } else if font.eq_ignore_ascii_case("Wingdings") {
+        Some(wingdings)
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -181,5 +291,41 @@ mod tests {
         assert_eq!(split("ŷ"), vec![Image("ŷ".into())]);
         assert_eq!(split("ﬁ"), vec![Sub('ﬁ', "fi".into())]);
         assert_eq!(symbol_font(0xF062), Some('β'));
+        assert_eq!(symbol_font(0xD2), Some('®'));
+        assert_eq!(symbol_font(0xE4), Some('™'));
+        assert_eq!(wingdings(0xF0FC), Some('✓'));
+        assert_eq!(wingdings(0x83), Some('③'));
+    }
+
+    #[test]
+    fn hangul_and_lookalikes() {
+        // 풀어쓴 한글 → 완성형 글
+        assert_eq!(
+            split("\u{1112}\u{1161}\u{11AB}\u{1100}\u{1173}\u{11AF}"),
+            vec![Text("한글".into())]
+        );
+        // 옛한글은 한 글자 그림 하나
+        assert_eq!(
+            split("\u{1112}\u{119E}\u{11AB}"),
+            vec![Image("\u{1112}\u{119E}\u{11AB}".into())]
+        );
+        // 가운뎃점 꼴 · 빗금
+        assert_eq!(
+            split("・‧⋅"),
+            vec![
+                Sub('・', "·".into()),
+                Sub('‧', "·".into()),
+                Sub('⋅', "·".into())
+            ]
+        );
+        assert_eq!(
+            split("1⁄2"),
+            vec![Text("1".into()), Sub('⁄', "/".into()), Text("2".into())]
+        );
+        // 이체 선택자는 지우고 앞 글자는 살린다
+        assert_eq!(
+            split("★\u{FE0E}"),
+            vec![Text("★".into()), Sub('\u{FE0E}', String::new())]
+        );
     }
 }

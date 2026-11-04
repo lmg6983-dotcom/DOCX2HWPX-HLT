@@ -268,6 +268,8 @@ impl Normalizer<'_> {
                 },
                 "w:r" => {
                     self.walk(&mut child);
+                    special_chars(&mut child);
+                    self.symbol_font_text(&mut child);
                     self.symbols(&mut child);
                     if self.nk_chars {
                         out.extend(self.split_run(child).into_iter().map(Node::El));
@@ -456,7 +458,64 @@ impl Normalizer<'_> {
         run.child(Element::new("w:drawing").child(inline))
     }
 
-    /// `w:sym` → `w:t`. Symbol 글꼴만 안다.
+    /// 글꼴이 Symbol · Wingdings 인 런의 글(`a` 가 α, `Ò` 가 ®, U+F061 이 α 로 보인다) → 실제 유니코드 글자.
+    /// Word 밖에서 붙여 넣은 글 · 옛 문서에 흔하다. 그대로 두면 HLT/HWPX 에서는 글꼴이 빠져 `a` · `Ò` 로 남는다.
+    /// 바꾼 뒤 그 글꼴은 런에서 뗀다(바꾼 글자를 다시 기호 글꼴로 그리지 않게).
+    fn symbol_font_text(&mut self, run: &mut Element) {
+        let Some(font) = run
+            .first("w:rPr")
+            .and_then(|p| p.first("w:rFonts"))
+            .and_then(|f| {
+                f.get("w:ascii")
+                    .or_else(|| f.get("w:hAnsi"))
+                    .or_else(|| f.get("w:cs"))
+            })
+            .map(str::to_string)
+        else {
+            return;
+        };
+        let Some(map) = chars::symbol_font_map(&font) else {
+            return;
+        };
+        let mut unmapped = Vec::new();
+        for node in &mut run.children {
+            let Node::El(el) = node else { continue };
+            if el.name != "w:t" {
+                continue;
+            }
+            let text: String = el
+                .text()
+                .chars()
+                .map(|c| {
+                    let code = c as u32;
+                    if !(0x20..=0xFF).contains(&code) && !(0xF020..=0xF0FF).contains(&code) {
+                        return c;
+                    }
+                    map(code).unwrap_or_else(|| {
+                        unmapped.push(code);
+                        c
+                    })
+                })
+                .collect();
+            *el = text_el(&text);
+        }
+        for code in unmapped {
+            self.report.warnings.push((
+                "symbol_unmapped",
+                format!("{font} 글꼴 기호 U+{code:04X} 는 옮기지 못했습니다"),
+            ));
+        }
+        if let Some(Node::El(rpr)) = run
+            .children
+            .iter_mut()
+            .find(|n| matches!(n, Node::El(e) if e.name == "w:rPr"))
+        {
+            rpr.children
+                .retain(|n| !matches!(n, Node::El(e) if e.name == "w:rFonts"));
+        }
+    }
+
+    /// `w:sym` → `w:t`. Symbol · Wingdings 글꼴만 안다.
     fn symbols(&mut self, run: &mut Element) {
         for node in &mut run.children {
             let Node::El(el) = node else { continue };
@@ -468,11 +527,7 @@ impl Normalizer<'_> {
                 .get("w:char")
                 .and_then(|c| u32::from_str_radix(c, 16).ok())
                 .unwrap_or(0);
-            let text = if font.eq_ignore_ascii_case("Symbol") {
-                chars::symbol_font(code)
-            } else {
-                None
-            };
+            let text = chars::symbol_font_map(&font).and_then(|map| map(code));
             match text {
                 Some(c) => *el = Element::new("w:t").text_child(&c.to_string()),
                 None => self.report.warnings.push((
@@ -614,6 +669,19 @@ fn inline_runs(block: &Element, out: &mut Vec<Node>, nested: &mut bool) {
             _ => inline_runs(child, out, nested),
         }
     }
+}
+
+/// 글자 대신 쓰는 Word 요소: 줄 안 나뉘는 하이픈(Ctrl+Shift+-) → `-`, 선택 하이픈 → 지움.
+/// hlt-core · HwpForge 는 이 요소를 읽지 않아 `1‑2` 가 `12` 가 된다.
+fn special_chars(run: &mut Element) {
+    run.children.retain_mut(|node| match node {
+        Node::El(el) if el.name == "w:noBreakHyphen" => {
+            *el = text_el("-");
+            true
+        }
+        Node::El(el) => el.name != "w:softHyphen",
+        Node::Text(_) => true,
+    });
 }
 
 fn text_el(t: &str) -> Element {
