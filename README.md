@@ -13,8 +13,8 @@
 
 설치할 필요가 없습니다. 압축을 풀고 실행하면 됩니다.
 
-- **[화면 앱 받기](https://github.com/lmg6983-dotcom/DOCX_2_HWPX_OR_HLT/releases/latest/download/docx2hwpx-hlt-windows-x64.zip)**: 대부분 이것만 받으면 됩니다.
-- [명령줄 버전 받기](https://github.com/lmg6983-dotcom/DOCX_2_HWPX_OR_HLT/releases/latest/download/docx2hwpx-hlt-cli-windows-x64.zip): 여러 파일을 한꺼번에 바꾸거나 자동화할 때, 또는 PCT 서식이 필요할 때 씁니다.
+- **[UI 앱 받기](https://github.com/lmg6983-dotcom/DOCX_2_HWPX_OR_HLT/releases/latest/download/docx2hwpx-hlt-windows-x64.zip)**: 대부분 이것만 받으면 됩니다.
+- [CLI 버전 받기](https://github.com/lmg6983-dotcom/DOCX_2_HWPX_OR_HLT/releases/latest/download/docx2hwpx-hlt-cli-windows-x64.zip): 여러 파일을 한꺼번에 바꾸거나 자동화할 때, 또는 PCT 서식이 필요할 때 씁니다.
 
 처음 실행할 때 Windows가 "알 수 없는 게시자"라며 막으면 **추가 정보 → 실행**을 누르세요.
 
