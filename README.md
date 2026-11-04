@@ -22,8 +22,10 @@ cargo build --release
 
 ## 화면 앱
 
-**윈도 실행 파일**: GitHub Actions(`windows` 작업)가 푸시마다 만든다. 저장소의 Actions → 최근 실행 → Artifacts 의
-`docx2hwpx-hlt-windows-x64` (zip: `docx2hwpx-hlt-gui.exe` · `docx2hwpx-hlt.exe`)를 받는다. 직접 빌드하려면:
+**윈도 실행 파일 받기**: [최신 릴리스](https://github.com/lmg6983-dotcom/DOCX2HWPX-HLT/releases/latest)의
+[`docx2hwpx-hlt-windows-x64.zip`](https://github.com/lmg6983-dotcom/DOCX2HWPX-HLT/releases/latest/download/docx2hwpx-hlt-windows-x64.zip)
+(`docx2hwpx-hlt-gui.exe` 화면 앱 · `docx2hwpx-hlt.exe` 명령줄). 설치 없이 압축을 풀고 실행한다.
+`v*` 태그를 올리면 GitHub Actions(`windows` 작업)가 시험 · 빌드 뒤 릴리스를 만든다. 푸시마다 만든 빌드는 Actions → 실행 → Artifacts 에도 있다. 직접 빌드하려면:
 
 ```bash
 cargo build --release --features gui --bin docx2hwpx-hlt-gui   # → target/release/docx2hwpx-hlt-gui(.exe)
