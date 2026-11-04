@@ -188,9 +188,10 @@ fn print_human(r: &Value) {
     }
     if r.get("equations").is_some() {
         eprintln!(
-            "수식 그림 {}개 · WMF/EMF 그림 변환 {}개",
+            "수식 그림 {}개 · WMF/EMF 그림 변환 {}개 · 도형 그림 {}개",
             n("equations"),
-            n("metafiles")
+            n("metafiles"),
+            n("shapes")
         );
     }
     if r["format"] == "hlt" && r.get("scripts").is_some() {

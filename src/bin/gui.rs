@@ -548,9 +548,10 @@ fn summary(ui: &mut egui::Ui, report: &Value) {
             n("comments_removed")
         ),
         format!(
-            "수식 그림 {}개 · WMF/EMF 그림 {}개",
+            "수식 그림 {}개 · WMF/EMF 그림 {}개 · 도형 그림 {}개",
             n("equations"),
-            n("metafiles")
+            n("metafiles"),
+            n("shapes")
         ),
     ];
     if n("scripts") > 0 {

@@ -66,6 +66,33 @@ def drawing(rid, cx, cy, n):
     )
 
 
+def group(n):
+    """ChemDraw 를 「도형으로 변환」한 꼴: 그룹 안에 그림 · 벡터 경로(고리) · 화살표 · 글상자(NaBH₄)."""
+    hexagon = "".join(
+        f'<a:{"moveTo" if i == 0 else "lnTo"}><a:pt x="{x}" y="{y}"/></a:{"moveTo" if i == 0 else "lnTo"}>'
+        for i, (x, y) in enumerate([(50, 0), (100, 25), (100, 75), (50, 100), (0, 75), (0, 25)])
+    )
+    ln = '<a:ln w="12700"><a:solidFill><a:srgbClr val="000000"/></a:solidFill>{}</a:ln>'
+    return (
+        f'<w:r><w:drawing><wp:inline><wp:extent cx="2400000" cy="800000"/><wp:docPr id="{n}" name="Group {n}"/>'
+        '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup">'
+        '<wpg:wgp><wpg:cNvGrpSpPr/><wpg:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="2400000" cy="800000"/>'
+        '<a:chOff x="0" y="0"/><a:chExt cx="4800000" cy="1600000"/></a:xfrm></wpg:grpSpPr>'
+        '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="90" name="part"/><pic:cNvPicPr/></pic:nvPicPr>'
+        '<pic:blipFill><a:blip r:embed="rIdImg"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+        '<pic:spPr><a:xfrm><a:off x="3400000" y="200000"/><a:ext cx="1200000" cy="1200000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>'
+        '<wps:wsp><wps:cNvPr id="91" name="ring"/><wps:cNvSpPr/><wps:spPr><a:xfrm><a:off x="200000" y="200000"/><a:ext cx="1200000" cy="1200000"/></a:xfrm>'
+        f'<a:custGeom><a:pathLst><a:path w="100" h="100">{hexagon}<a:close/></a:path></a:pathLst></a:custGeom>{ln.format("")}</wps:spPr><wps:bodyPr/></wps:wsp>'
+        '<wps:wsp><wps:cNvPr id="92" name="arrow"/><wps:cNvSpPr/><wps:spPr><a:xfrm><a:off x="1700000" y="800000"/><a:ext cx="1400000" cy="0"/></a:xfrm>'
+        f'<a:prstGeom prst="straightConnector1"><a:avLst/></a:prstGeom>{ln.format(chr(60) + "a:tailEnd type=" + chr(34) + "triangle" + chr(34) + "/>")}</wps:spPr><wps:bodyPr/></wps:wsp>'
+        '<wps:wsp><wps:cNvPr id="93" name="reagent"/><wps:cNvSpPr txBox="1"/><wps:spPr><a:xfrm><a:off x="1700000" y="300000"/><a:ext cx="1400000" cy="400000"/></a:xfrm>'
+        '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></wps:spPr><wps:txbx><w:txbxContent><w:p><w:pPr><w:jc w:val="center"/></w:pPr>'
+        '<w:r><w:rPr><w:sz w:val="20"/></w:rPr><w:t>NaBH</w:t></w:r><w:r><w:rPr><w:sz w:val="20"/><w:vertAlign w:val="subscript"/></w:rPr><w:t>4</w:t></w:r></w:p></w:txbxContent></wps:txbx>'
+        '<wps:bodyPr lIns="0" tIns="0" rIns="0" bIns="0"/></wps:wsp>'
+        "</wpg:wgp></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>"
+    )
+
+
 def tc(content, w, span=None, vmerge=None):
     pr = f'<w:tcW w:w="{w}" w:type="dxa"/>'
     if span:
@@ -174,6 +201,8 @@ body = "".join(
         p(t("【도면】")),
         p(t("【도 1】")),
         p(drawing("rIdImg", 1800000, 1200000, 5)),
+        p(t("【도 2】")),
+        p(group(6)),
     ]
 )
 
@@ -182,7 +211,9 @@ ns = (
     'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" '
     'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
     'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
-    'xmlns:v="urn:schemas-microsoft-com:vml"'
+    'xmlns:v="urn:schemas-microsoft-com:vml" '
+    'xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" '
+    'xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"'
 )
 document = f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document {ns}><w:body>{body}<w:sectPr/></w:body></w:document>'
 img = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"

@@ -33,6 +33,8 @@ pub type Warnings = Vec<(&'static str, String)>;
 pub struct Report {
     pub equations: usize,
     pub metafiles: usize,
+    /// 그림 한 장으로 바꾼 Word 도형 · 그룹 수
+    pub shapes: usize,
     pub scripts: usize,
     pub substitutions: HashMap<(char, String), usize>,
     pub glyph_images: HashMap<String, usize>,
@@ -54,6 +56,8 @@ struct Normalizer<'a> {
     /// 수식 하나를 그릴 때마다 (그린 수, 모두)
     progress: &'a mut dyn FnMut(usize, usize),
     math_total: usize,
+    /// 원래 DOCX 의 부분(그룹 안 그림을 읽는다).
+    parts: HashMap<String, Vec<u8>>,
 }
 
 /// `nk_chars` = HLT(NK-Editor) 글자 규칙까지 적용한다.
@@ -99,6 +103,7 @@ pub fn normalize(
         report: Report::default(),
         progress,
         math_total: count_math(&document),
+        parts: parts.iter().cloned().collect(),
     };
     n.convert_metafiles(&parts);
     for (k, v) in [
@@ -263,6 +268,13 @@ impl Normalizer<'_> {
                     self.flatten_cell(&mut child);
                     out.push(Node::El(child));
                 }
+                "w:drawing" => match self.flatten_shapes(&child) {
+                    Some(drawing) => out.push(Node::El(drawing)),
+                    None => {
+                        self.walk(&mut child);
+                        out.push(Node::El(child));
+                    }
+                },
                 "w:object" | "w:pict" => match self.vml_image(&child) {
                     Some(drawing) => out.push(Node::El(drawing)),
                     None => {
@@ -389,6 +401,139 @@ impl Normalizer<'_> {
                 .attr("Target", &target),
         ));
         id
+    }
+
+    /// 관계 id → 그림 바이트(WMF/EMF 는 이미 바꾼 PNG) · MIME.
+    fn media(&self, rel_id: &str) -> Option<(Vec<u8>, &'static str)> {
+        let target = self
+            .rels
+            .elements()
+            .find(|r| r.get("Id") == Some(rel_id))?
+            .get("Target")?;
+        let path = format!(
+            "word/{}",
+            target.trim_start_matches('/').trim_start_matches("word/")
+        );
+        let bytes = self
+            .new_files
+            .iter()
+            .find(|(n, _)| *n == path)
+            .map(|(_, b)| b.clone())
+            .or_else(|| self.parts.get(&path).cloned())?;
+        let mime = match bytes.get(..4) {
+            Some([0x89, b'P', b'N', b'G']) => "image/png",
+            Some([0xFF, 0xD8, ..]) => "image/jpeg",
+            Some([b'G', b'I', b'F', _]) => "image/gif",
+            _ => return None,
+        };
+        Some((bytes, mime))
+    }
+
+    /// Word 그룹 도형 · 벡터 도형(`wpg:wgp` · `wps:wsp`)을 원래 배치대로 그림 한 장으로 바꾼다.
+    /// 글상자만 있는 도형(그룹 밖)은 그대로 둔다 — 글을 그림으로 굳히지 않는다.
+    fn flatten_shapes(&mut self, drawing: &Element) -> Option<Element> {
+        let frame = drawing
+            .elements()
+            .find(|e| e.name == "wp:inline" || e.name == "wp:anchor")?;
+        let data = frame.first("a:graphic")?.first("a:graphicData")?;
+        let root = data
+            .elements()
+            .find(|e| e.name == "wpg:wgp" || e.name == "wps:wsp")?;
+        if root.name == "wps:wsp" && root.first("wps:txbx").is_some() {
+            return None;
+        }
+        let extent = frame.first("wp:extent")?;
+        let num = |k: &str| {
+            extent
+                .get(k)
+                .and_then(|v| v.parse::<f64>().ok())
+                .unwrap_or(0.0)
+        };
+        let (cx, cy) = (num("cx"), num("cy"));
+        let name = frame
+            .first("wp:docPr")
+            .and_then(|d| d.get("name"))
+            .unwrap_or("도형")
+            .to_string();
+        let svg = crate::shapes::to_svg(data, cx, cy, &|id| self.media(id))?;
+        for what in &svg.skipped {
+            self.report.warnings.push((
+                "shape_partial",
+                format!("{name}: {what} 은(는) 그리지 못했습니다"),
+            ));
+        }
+        let png = match crate::render::shapes_to_png(&svg.svg, svg.width_pt, svg.height_pt) {
+            Ok(png) => png,
+            Err(e) => {
+                self.report
+                    .warnings
+                    .push(("shape_failed", format!("{name}: {e}")));
+                return None;
+            }
+        };
+        let id = self.add_png(png);
+        let (w, h) = (
+            (svg.width_pt * EMU_PER_PT).round().to_string(),
+            (svg.height_pt * EMU_PER_PT).round().to_string(),
+        );
+        let mut frame = frame.clone();
+        for node in &mut frame.children {
+            let Node::El(e) = node else { continue };
+            match e.name.as_str() {
+                "wp:extent" => *e = Element::new("wp:extent").attr("cx", &w).attr("cy", &h),
+                "a:graphic" => *e = self.pic_graphic(&id, &w, &h, &format!("{name}.png")),
+                _ => {}
+            }
+        }
+        self.report.shapes += 1;
+        Some(Element::new("w:drawing").child(frame))
+    }
+
+    /// 그림 하나를 담은 `a:graphic`.
+    fn pic_graphic(&mut self, rel_id: &str, cx: &str, cy: &str, name: &str) -> Element {
+        self.next_id += 1;
+        let id = (100_000 + self.next_id).to_string();
+        let pic = Element::new("pic:pic")
+            .attr(
+                "xmlns:pic",
+                "http://schemas.openxmlformats.org/drawingml/2006/picture",
+            )
+            .child(
+                Element::new("pic:nvPicPr")
+                    .child(Element::new("pic:cNvPr").attr("id", &id).attr("name", name))
+                    .child(Element::new("pic:cNvPicPr")),
+            )
+            .child(
+                Element::new("pic:blipFill")
+                    .child(Element::new("a:blip").attr("r:embed", rel_id))
+                    .child(Element::new("a:stretch").child(Element::new("a:fillRect"))),
+            )
+            .child(
+                Element::new("pic:spPr")
+                    .child(
+                        Element::new("a:xfrm")
+                            .child(Element::new("a:off").attr("x", "0").attr("y", "0"))
+                            .child(Element::new("a:ext").attr("cx", cx).attr("cy", cy)),
+                    )
+                    .child(
+                        Element::new("a:prstGeom")
+                            .attr("prst", "rect")
+                            .child(Element::new("a:avLst")),
+                    ),
+            );
+        Element::new("a:graphic")
+            .attr(
+                "xmlns:a",
+                "http://schemas.openxmlformats.org/drawingml/2006/main",
+            )
+            .child(
+                Element::new("a:graphicData")
+                    .attr(
+                        "uri",
+                        "http://schemas.openxmlformats.org/drawingml/2006/picture",
+                    )
+                    .child(pic),
+            )
     }
 
     fn image_run(&mut self, rel_id: &str, png: &Png, rpr: Option<&Element>) -> Element {

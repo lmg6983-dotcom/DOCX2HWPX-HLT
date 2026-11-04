@@ -26,7 +26,7 @@ target/release/docx2hwpx-hlt 명세서.docx --to hlt --json
 
 ```json
 {"ok":true,"input":"a.docx","output":"a.hlt","format":"hlt","dialect":"domestic",
- "revisions_accepted":7,"comments_removed":1,"equations":6,"metafiles":2,"scripts":4,
+ "revisions_accepted":7,"comments_removed":1,"equations":6,"metafiles":2,"shapes":1,"scripts":4,
  "substitutions":[{"from":"–","codepoints":"U+2013","to":"-","count":1}],
  "glyph_images":[{"text":"x̂","codepoints":"U+0078 U+0302","count":1}],
  "warnings":[{"code":"nested_table_flattened","message":"…"}]}
@@ -40,6 +40,7 @@ target/release/docx2hwpx-hlt 명세서.docx --to hlt --json
 | `equations` | 그림으로 넣은 수식(OMML) 수. 최소 14pt로 그린다 |
 | `images_optimized` | HLT 에서 다듬은 그림 수. `--image-dpi`(기본 300, 0 이면 끔) 상한으로 줄이고 흰 바탕 · 회색 잔물결과 채널 하위 2비트를 정리한다 |
 | `metafiles` | PNG 로 바꾼 WMF/EMF(OLE 수식 미리보기 포함) 수 |
+| `shapes` | 그림 한 장으로 구운 Word 그룹 도형 · 벡터 도형 수(ChemDraw 를 「도형으로 변환」한 반응식 등). 그룹 밖 글상자는 그대로 둔다 |
 | `scripts` | 첨자 모양 글자(², ₂)를 첨자 서식으로 바꾼 곳 수 (HLT) |
 | `substitutions` | 모양이 같은 글자로 바꾼 것 (HLT) |
 | `glyph_images` | 글자 그림으로 넣은 글자 (HLT) — 편집기에서 글로 고칠 수 없다 |
@@ -68,6 +69,8 @@ target/release/docx2hwpx-hlt 명세서.docx --to hlt --json
 | `metafile_failed` | 자리표 그림도 넣지 못했다 |
 | `symbol_unmapped` | Symbol 밖 기호 글꼴(Wingdings 등) 글자를 옮기지 못했다 |
 | `glyph_failed` | 글자 그림을 그리지 못해 원래 글자를 남겼다(HLT 에서 실패로 이어질 수 있다) |
+| `shape_partial` | 그룹 도형을 그림으로 구웠지만 일부(낯선 도형 모양 · 경로 명령 · 그룹 안 차트 등)는 빠졌다 |
+| `shape_failed` | 도형을 그림으로 굽지 못해 원래대로 두었다(벡터 도형은 빠진다) |
 | `nested_table_flattened` | HLT: 표 칸 안의 표를 글로 풀었다 |
 | `image_missing` | HWPX: DOCX 안에 그림 파일이 없다 |
 
@@ -87,6 +90,7 @@ target/release/docx2hwpx-hlt 명세서.docx --to hlt --json
 | `src/chars.rs` | NK-Editor 글자 규칙(CP949) |
 | `src/omml.rs` | OMML → Typst 수식 |
 | `src/render.rs` | Typst · resvg 로 PNG 굽기 |
+| `src/shapes.rs` | Word 그룹 도형 · 벡터 도형 → SVG |
 | `src/hwpx.rs` | 고쳐 쓴 DOCX → HWPX(HwpForge) |
 | `tests/make_fixture.py` | 시험용 DOCX 생성기 → `tests/fixtures/sample.docx` |
 
