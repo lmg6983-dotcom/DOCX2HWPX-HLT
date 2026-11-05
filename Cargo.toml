@@ -1,6 +1,6 @@
 [package]
 name = "docx2hwpx-hlt"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/lmg6983-dotcom/DOCX_2_HWPX_OR_HLT"

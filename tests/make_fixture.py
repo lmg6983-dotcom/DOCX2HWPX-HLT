@@ -162,6 +162,11 @@ body = "".join(
                 '<w:trPr><w:del w:id="9" w:author="a"/></w:trPr>' + tc(p(t("지운 줄")), 3600, span=2) + tc(p(t("지운 줄")), 1800),
             ],
         ),
+        # hlt-core 가 거부하던 표: 소수 열 너비 · 줄 앞 빈 자리 · 칸이 모자란 줄 · 위가 없는 세로 병합 · 콘텐츠 컨트롤 칸
+        '<w:tbl><w:tblPr><w:tblInd w:w="100.5" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="1800.4"/><w:gridCol w:w="1800"/><w:gridCol/></w:tblGrid>'
+        f'<w:tr>{tc(p(t("화합물")), 1800, vmerge="continue")}{tc(p(t("구조")), 1800)}{tc(p(t("수율")), 1800)}</w:tr>'
+        f'<w:tr>{tc(p(), 1800, vmerge="continue")}<w:sdt><w:sdtPr/><w:sdtContent>{tc(p(t("화합물 A")), 1800)}</w:sdtContent></w:sdt></w:tr>'
+        f'<w:tr><w:trPr><w:gridBefore w:val="1"/></w:trPr>{tc(p(t("화합물 B")), 1800)}{tc(p(t("92%")), 1800)}</w:tr></w:tbl>',
         p(t("【0004】 WMF 와 EMF 그림: "), drawing("rIdWmf", 1800000, 900000, 3), drawing("rIdEmf", 1800000, 900000, 4)),
         # 옛 OLE 수식(Equation 3.0 · MathType): VML 에 WMF 미리보기만 있다
         p(t("【0005】 OLE 수식 "), '<w:r><w:object><v:shape style="width:60pt;height:20pt"><v:imagedata r:id="rIdWmf"/></v:shape></w:object></w:r>', t(" 끝.")),

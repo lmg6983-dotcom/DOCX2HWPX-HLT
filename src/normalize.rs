@@ -58,6 +58,8 @@ struct Normalizer<'a> {
     math_total: usize,
     /// 원래 DOCX 의 부분(그룹 안 그림을 읽는다).
     parts: HashMap<String, Vec<u8>>,
+    /// 지금까지 만난 표 수(경고에 「표 n」으로 쓴다).
+    tables: usize,
 }
 
 /// `nk_chars` = HLT(NK-Editor) 글자 규칙까지 적용한다.
@@ -104,6 +106,7 @@ pub fn normalize(
         progress,
         math_total: count_math(&document),
         parts: parts.iter().cloned().collect(),
+        tables: 0,
     };
     n.convert_metafiles(&parts);
     for (k, v) in [
@@ -261,6 +264,31 @@ impl Normalizer<'_> {
                     if display_only {
                         center(&mut child);
                     }
+                    out.push(Node::El(child));
+                }
+                "w:tbl" => {
+                    self.tables += 1;
+                    let n = self.tables;
+                    if !crate::tables::has_rows(&child) {
+                        self.report.warnings.push((
+                            "table_repaired",
+                            format!("표 {n}: 줄이 없는 빈 표를 지웠습니다"),
+                        ));
+                        continue;
+                    }
+                    if self.nk_chars {
+                        let fixed = crate::tables::repair(&mut child);
+                        if !fixed.fixes.is_empty() {
+                            self.report.warnings.push((
+                                "table_repaired",
+                                format!(
+                                    "표 {n}: HLT 가 읽을 수 있게 구조를 고쳤습니다 — {}",
+                                    fixed.fixes.join(", ")
+                                ),
+                            ));
+                        }
+                    }
+                    self.walk(&mut child);
                     out.push(Node::El(child));
                 }
                 "w:tc" if self.nk_chars => {

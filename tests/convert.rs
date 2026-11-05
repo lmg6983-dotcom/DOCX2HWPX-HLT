@@ -111,6 +111,28 @@ fn hlt_keeps_equations_tables_and_nk_characters() {
             .iter()
             .any(|w| w["code"] == "nested_table_flattened")
     );
+    // hlt-core 가 거부하던 표는 고쳐 넘기고 무엇을 고쳤는지 알린다.
+    let repaired: Vec<&str> = r["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|w| w["code"] == "table_repaired")
+        .map(|w| w["message"].as_str().unwrap())
+        .collect();
+    assert!(
+        repaired.len() == 1
+            && [
+                "표 3",
+                "gridBefore",
+                "세로 병합",
+                "모자란 줄",
+                "콘텐츠 컨트롤",
+                "열 너비"
+            ]
+            .iter()
+            .all(|k| repaired[0].contains(k)),
+        "{repaired:?}"
+    );
     let (doc, payloads) = hlt_core::hml_document_from_hlt(&out).unwrap();
     // 수식 6 · WMF/EMF 2 · OLE 수식 1 · PNG 2 · 글자 그림 4(x̂ ŷ ü ℏ) · 그룹 도형 1
     assert_eq!(payloads.len(), 16);
@@ -144,6 +166,10 @@ fn hlt_keeps_equations_tables_and_nk_characters() {
         first.text
     );
     let cell = |t: &str| doc.cells.iter().any(|c| c.text.trim() == t);
+    assert!(
+        cell("화합물 A") && cell("화합물 B") && cell("92%"),
+        "고친 표의 칸 글"
+    );
     assert!(cell("첫 줄 둘째 줄") && cell("안1 | 안2"));
     // 긴 첨자 문단: 저장 줄 경계가 영문 낱말(첨자 포함) 가운데에 오지 않는다(통특기 줄 규칙).
     let long = doc
@@ -230,7 +256,10 @@ fn hwpx_keeps_equations_tables_and_text() {
             && !text.contains("지운 글"),
         "{text}"
     );
-    assert_eq!(tables, 2, "표 + 칸 안의 표");
+    assert_eq!(
+        tables, 3,
+        "표 + 칸 안의 표 + 구조를 고친 표(HWPX 는 그대로)"
+    );
     assert_eq!(
         images, 12,
         "수식 6 · WMF/EMF 2 · OLE 수식 1 · PNG 2 · 그룹 도형 1"

@@ -8,6 +8,7 @@ mod normalize;
 mod omml;
 mod render;
 mod shapes;
+mod tables;
 mod xml;
 
 use std::path::{Path, PathBuf};

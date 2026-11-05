@@ -71,6 +71,7 @@ target/release/docx2hwpx-hlt 명세서.docx --to hlt --json
 | `glyph_failed` | 글자 그림을 그리지 못해 원래 글자를 남겼다(HLT 에서 실패로 이어질 수 있다) |
 | `shape_partial` | 그룹 도형을 그림으로 구웠지만 일부(낯선 도형 모양 · 경로 명령 · 그룹 안 차트 등)는 빠졌다 |
 | `shape_failed` | 도형을 그림으로 굽지 못해 원래대로 두었다(벡터 도형은 빠진다) |
+| `table_repaired` | 표 구조를 고쳐 넘겼다(HLT: 칸이 모자란 줄 · 줄 앞뒤 빈 자리 · 넘친 칸 합치기 · 위가 없는 세로 병합 · 소수 열 너비 · 콘텐츠 컨트롤 등, 모두: 빈 표 지움). 「표 n」을 편집기에서 확인한다 |
 | `nested_table_flattened` | HLT: 표 칸 안의 표를 글로 풀었다 |
 | `image_missing` | HWPX: DOCX 안에 그림 파일이 없다 |
 
@@ -91,6 +92,7 @@ target/release/docx2hwpx-hlt 명세서.docx --to hlt --json
 | `src/omml.rs` | OMML → Typst 수식 |
 | `src/render.rs` | Typst · resvg 로 PNG 굽기 |
 | `src/shapes.rs` | Word 그룹 도형 · 벡터 도형 → SVG |
+| `src/tables.rs` | HLT 표 구조 바로잡기(hlt-core 표 판독이 거부하는 꼴) |
 | `src/hwpx.rs` | 고쳐 쓴 DOCX → HWPX(HwpForge) |
 | `tests/make_fixture.py` | 시험용 DOCX 생성기 → `tests/fixtures/sample.docx` |
 
