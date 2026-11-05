@@ -71,13 +71,19 @@ target/release/docx2hwpx-hlt 명세서.docx --to hlt --json
 | `glyph_failed` | 글자 그림을 그리지 못해 원래 글자를 남겼다(HLT 에서 실패로 이어질 수 있다) |
 | `shape_partial` | 그룹 도형을 그림으로 구웠지만 일부(낯선 도형 모양 · 경로 명령 · 그룹 안 차트 등)는 빠졌다 |
 | `shape_failed` | 도형을 그림으로 굽지 못해 원래대로 두었다(벡터 도형은 빠진다) |
+| `table_repaired` | 표 구조를 고쳐 넘겼다(HLT: 칸이 모자란 줄 · 줄 앞뒤 빈 자리 · 넘친 칸 합치기 · 위가 없는 세로 병합 · 소수 열 너비 · 콘텐츠 컨트롤 등, 모두: 빈 표 지움). 「표 n」을 편집기에서 확인한다 |
 | `nested_table_flattened` | HLT: 표 칸 안의 표를 글로 풀었다 |
-| `image_missing` | HWPX: DOCX 안에 그림 파일이 없다 |
+| `image_missing` | 그림 파일이 DOCX 안에 없거나 · 읽을 수 없거나 · 링크(파일에 연결)로만 연결돼 「그림 없음」 자리표를 넣었다(SVG 는 PNG 로 바꾸고, 쓰지 않는 깨진 그림 관계는 조용히 지운다). 사용자에게 원본 그림을 문서에 넣어 달라고 한다 |
+| `images_downscaled` | HLT: 문서가 hlt-core 한도(64MB)를 넘어 그림 해상도 상한을 200 · 150 · 100 · 72dpi 로 차례로 낮췄다. 72dpi 로도 넘으면 `convert_failed`(문서를 나누라는 `message`) |
 
 ### 사용자에게 알릴 것
 
 변환 뒤 `warnings` · `glyph_images` · `substitutions` 가 비어 있지 않으면 그 목록을 짧게 전하고,
 **NK-Editor / MOIP-Editor 에서 열어 확인한 뒤 제출하라**고 덧붙인다. 공개 사양이 없는 형식이다.
+
+`message`(경고 · 실패 모두)는 사용자용 문장이다: 「【0012】 부근 그림: 무엇이 일어났나 — 어떻게 하면 되나」 꼴이고,
+개발자용 내용은 맨 뒤 ` (기술 정보: …)` 에 있다. 사용자에게는 그 앞까지를 그대로 전하고, 기술 정보는 문의할 때만 덧붙인다.
+문구는 계약이 아니다(바뀔 수 있다) — 분기는 `code` 로 한다. 문구는 `src/messages.rs` 한곳에서 만든다.
 
 ## 고치기 (이 저장소에서 일할 때)
 
@@ -91,6 +97,8 @@ target/release/docx2hwpx-hlt 명세서.docx --to hlt --json
 | `src/omml.rs` | OMML → Typst 수식 |
 | `src/render.rs` | Typst · resvg 로 PNG 굽기 |
 | `src/shapes.rs` | Word 그룹 도형 · 벡터 도형 → SVG |
+| `src/tables.rs` | HLT 표 구조 바로잡기(hlt-core 표 판독이 거부하는 꼴) |
+| `src/messages.rs` | 사용자에게 보이는 경고 · 실패 문구(어디서 — 무엇이 — 어떻게, 기술 정보는 괄호) |
 | `src/hwpx.rs` | 고쳐 쓴 DOCX → HWPX(HwpForge) |
 | `tests/make_fixture.py` | 시험용 DOCX 생성기 → `tests/fixtures/sample.docx` |
 

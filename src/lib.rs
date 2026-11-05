@@ -4,10 +4,12 @@ mod chars;
 mod hlt_lines;
 mod hwpx;
 pub mod image_opt;
+pub mod messages;
 mod normalize;
 mod omml;
 mod render;
 mod shapes;
+mod tables;
 mod xml;
 
 use std::path::{Path, PathBuf};
@@ -20,6 +22,11 @@ use serde_json::{Value, json};
 pub struct Failure {
     pub code: &'static str,
     pub message: String,
+}
+
+/// 메시지 → (사람용 문장, 기술 정보). 화면 앱이 기술 정보를 작게 보여 줄 때 쓴다.
+pub fn split_message(message: &str) -> (&str, Option<&str>) {
+    messages::split(message)
 }
 
 pub fn fail(code: &'static str, message: impl Into<String>) -> Failure {
@@ -76,7 +83,7 @@ pub fn convert(docx: &[u8], target: Target, font_dirs: &[PathBuf], progress: Pro
         Ok(v) => v,
         Err(e) => {
             return Outcome {
-                result: Err(fail("invalid_docx", e)),
+                result: Err(fail("invalid_docx", messages::invalid_docx(&e))),
                 report: json!({}),
             };
         }
@@ -110,17 +117,12 @@ pub fn convert(docx: &[u8], target: Target, font_dirs: &[PathBuf], progress: Pro
     let mut images_optimized = 0;
     let result = match target {
         Target::Hlt { pct, max_dpi } => {
-            let optimized = if max_dpi == 0 {
-                Ok((normalized, 0))
-            } else {
-                image_opt::optimize(&normalized, max_dpi)
-            };
-            optimized
-                .map_err(|e| fail("convert_failed", e))
-                .and_then(|(docx, n)| {
+            fit_hlt_limit(&normalized, max_dpi, HLT_DOCX_LIMIT, &mut warnings).and_then(
+                |(docx, n)| {
                     images_optimized = n;
                     hlt_bytes(&docx, pct, &mut substitutions)
-                })
+                },
+            )
         }
         Target::Hwpx => hwpx::convert(&normalized)
             .map(|(bytes, w)| {
@@ -130,7 +132,7 @@ pub fn convert(docx: &[u8], target: Target, font_dirs: &[PathBuf], progress: Pro
                 );
                 bytes
             })
-            .map_err(|e| fail("convert_failed", e)),
+            .map_err(|e| fail("convert_failed", messages::hwpx_failure(&e))),
     };
     substitutions.sort_by_key(|v| v["from"].as_str().unwrap_or_default().to_string());
     if result.is_ok() {
@@ -153,6 +155,54 @@ pub fn convert(docx: &[u8], target: Target, font_dirs: &[PathBuf], progress: Pro
     }
 }
 
+/// hlt-core 가 읽는 DOCX 의 크기 한도(`MAX_DOCX_BYTES`, 넘으면 `size_limit_exceeded`).
+const HLT_DOCX_LIMIT: usize = 64 * 1024 * 1024;
+/// 한도를 넘으면 차례로 낮춰 볼 그림 해상도 상한.
+const FALLBACK_DPI: [u32; 4] = [200, 150, 100, 72];
+
+/// HLT 용 그림 다듬기(`max_dpi`, 0 이면 끔). 결과가 64MB 를 넘으면 해상도 상한을 낮춰 다시 줄이고
+/// `images_downscaled` 로 알린다. 72dpi 로도 넘으면 실패.
+fn fit_hlt_limit(
+    normalized: &[u8],
+    max_dpi: u32,
+    limit: usize,
+    warnings: &mut Vec<Value>,
+) -> Result<(Vec<u8>, usize), Failure> {
+    let optimize =
+        |dpi: u32| image_opt::optimize(normalized, dpi).map_err(|e| fail("convert_failed", e));
+    let (mut docx, mut count) = if max_dpi == 0 {
+        (normalized.to_vec(), 0)
+    } else {
+        optimize(max_dpi)?
+    };
+    let start = docx.len();
+    let mut used = None;
+    for dpi in FALLBACK_DPI {
+        if docx.len() <= limit {
+            break;
+        }
+        if max_dpi != 0 && dpi >= max_dpi {
+            continue;
+        }
+        (docx, count) = optimize(dpi)?;
+        used = Some(dpi);
+    }
+    let mb = |n: usize| n as f64 / 1024.0 / 1024.0;
+    if docx.len() > limit {
+        return Err(fail(
+            "convert_failed",
+            messages::too_large(mb(docx.len()), mb(limit)),
+        ));
+    }
+    if let Some(dpi) = used {
+        warnings.push(json!({
+            "code": "images_downscaled",
+            "message": messages::images_downscaled(mb(start), mb(limit), dpi, mb(docx.len())),
+        }));
+    }
+    Ok((docx, count))
+}
+
 /// 옆의 임시 이름에 다 쓴 뒤 옮긴다 — 실패해도 원래 파일이 남고, 반쯤 쓴 파일이 생기지 않는다.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), Failure> {
     let temp = path.with_file_name(format!(
@@ -162,7 +212,12 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), Failure> {
     ));
     let written = std::fs::write(&temp, bytes)
         .and_then(|()| std::fs::rename(&temp, path))
-        .map_err(|e| fail("write_failed", format!("{}: {e}", path.display())));
+        .map_err(|e| {
+            fail(
+                "write_failed",
+                messages::write_failed(&path.display().to_string(), &e.to_string()),
+            )
+        });
     if written.is_err() {
         let _ = std::fs::remove_file(&temp);
     }
@@ -195,11 +250,20 @@ fn hlt_bytes(
     let docx = std::env::temp_dir().join(format!("{base}.docx"));
     let output = std::env::temp_dir().join(format!("{base}.hlt"));
     let result = std::fs::write(&docx, normalized)
-        .map_err(|e| fail("write_failed", format!("{}: {e}", docx.display())))
+        .map_err(|e| {
+            fail(
+                "write_failed",
+                messages::write_failed(&docx.display().to_string(), &e.to_string()),
+            )
+        })
         .and_then(|()| hlt_from_docx(&docx, &output, pct, substitutions))
         .and_then(|()| {
-            std::fs::read(&output)
-                .map_err(|e| fail("write_failed", format!("{}: {e}", output.display())))
+            std::fs::read(&output).map_err(|e| {
+                fail(
+                    "write_failed",
+                    messages::write_failed(&output.display().to_string(), &e.to_string()),
+                )
+            })
         });
     let _ = std::fs::remove_file(&docx);
     let _ = std::fs::remove_file(&output);
@@ -215,7 +279,11 @@ fn hlt_from_docx(
     let core = |e: hlt_core::CoreError| {
         fail(
             "convert_failed",
-            format!("HLT: {} ({}) {:?}", e.message, e.phase, e.details),
+            messages::hlt_failure(
+                &e.message,
+                &e.phase,
+                &format!("HLT: {} ({}) {:?}", e.message, e.phase, e.details),
+            ),
         )
     };
     let (mut document, payloads, subs) = hlt_core::load_generation_input(docx).map_err(core)?;
@@ -238,4 +306,66 @@ fn hlt_from_docx(
     )
     .map_err(core)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    /// 압축되지 않는 600×600 그림을 1인치 폭으로 넣은 DOCX.
+    fn noisy_docx() -> Vec<u8> {
+        let mut state = 1_u32;
+        let pixels: Vec<u8> = (0..600 * 600 * 3)
+            .map(|_| {
+                state = state.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+                (state >> 16) as u8
+            })
+            .collect();
+        let mut png = Vec::new();
+        image::RgbImage::from_raw(600, 600, pixels)
+            .unwrap()
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        let doc = r#"<w:document xmlns:w="w" xmlns:wp="wp" xmlns:a="a" xmlns:r="r"><w:body><w:p><w:r><w:drawing><wp:inline><wp:extent cx="914400" cy="914400"/><a:graphic><a:graphicData><a:blip r:embed="rId1"/></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:body></w:document>"#;
+        let rels = r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/a.png"/></Relationships>"#;
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let o = zip::write::SimpleFileOptions::default();
+        for (name, bytes) in [
+            ("word/document.xml", doc.as_bytes()),
+            ("word/_rels/document.xml.rels", rels.as_bytes()),
+            ("word/media/a.png", &png),
+        ] {
+            zip.start_file(name, o).unwrap();
+            zip.write_all(bytes).unwrap();
+        }
+        zip.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn oversized_docx_is_downscaled_or_refused() {
+        let docx = noisy_docx();
+        let mut w = Vec::new();
+        fit_hlt_limit(&docx, 300, usize::MAX, &mut w).unwrap();
+        assert!(w.is_empty(), "한도 안이면 경고 없음");
+
+        let at_72 = image_opt::optimize(&docx, 72).unwrap().0.len();
+        let mut w = Vec::new();
+        let (out, _) = fit_hlt_limit(&docx, 300, at_72, &mut w).unwrap();
+        assert!(out.len() <= at_72);
+        assert_eq!(w[0]["code"], "images_downscaled", "{w:?}");
+
+        // --image-dpi 0(다듬기 끔)이어도 한도를 넘으면 줄인다
+        let mut w = Vec::new();
+        fit_hlt_limit(&docx, 0, at_72, &mut w).unwrap();
+        assert_eq!(w[0]["code"], "images_downscaled");
+
+        let err = fit_hlt_limit(&docx, 300, 1, &mut Vec::new()).unwrap_err();
+        assert_eq!(err.code, "convert_failed");
+        assert!(
+            err.message.contains("72dpi") && err.message.contains("나누어"),
+            "{}",
+            err.message
+        );
+    }
 }

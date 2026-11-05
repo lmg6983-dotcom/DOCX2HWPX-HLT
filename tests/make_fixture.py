@@ -162,6 +162,11 @@ body = "".join(
                 '<w:trPr><w:del w:id="9" w:author="a"/></w:trPr>' + tc(p(t("지운 줄")), 3600, span=2) + tc(p(t("지운 줄")), 1800),
             ],
         ),
+        # hlt-core 가 거부하던 표: 소수 열 너비 · 줄 앞 빈 자리 · 칸이 모자란 줄 · 위가 없는 세로 병합 · 콘텐츠 컨트롤 칸
+        '<w:tbl><w:tblPr><w:tblInd w:w="100.5" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="1800.4"/><w:gridCol w:w="1800"/><w:gridCol/></w:tblGrid>'
+        f'<w:tr>{tc(p(t("화합물")), 1800, vmerge="continue")}{tc(p(t("구조")), 1800)}{tc(p(t("수율")), 1800)}</w:tr>'
+        f'<w:tr>{tc(p(), 1800, vmerge="continue")}<w:sdt><w:sdtPr/><w:sdtContent>{tc(p(t("화합물 A")), 1800)}</w:sdtContent></w:sdt></w:tr>'
+        f'<w:tr><w:trPr><w:gridBefore w:val="1"/></w:trPr>{tc(p(t("화합물 B")), 1800)}{tc(p(t("92%")), 1800)}</w:tr></w:tbl>',
         p(t("【0004】 WMF 와 EMF 그림: "), drawing("rIdWmf", 1800000, 900000, 3), drawing("rIdEmf", 1800000, 900000, 4)),
         # 옛 OLE 수식(Equation 3.0 · MathType): VML 에 WMF 미리보기만 있다
         p(t("【0005】 OLE 수식 "), '<w:r><w:object><v:shape style="width:60pt;height:20pt"><v:imagedata r:id="rIdWmf"/></v:shape></w:object></w:r>', t(" 끝.")),
@@ -201,6 +206,9 @@ body = "".join(
         p(t("【도면】")),
         p(t("【도 1】")),
         p(drawing("rIdImg", 1800000, 1200000, 5)),
+        # SVG 그림(Word 365 아이콘) · 링크로만 연결된 그림 — hlt-core 가 거부하던 그림 관계
+        p(t("【0009】 SVG "), drawing("rIdSvg", 900000, 450000, 7), t(" 와 링크 그림 "),
+          drawing("rIdLinked", 900000, 600000, 8).replace('r:embed="rIdLinked"', 'r:link="rIdLinked"')),
         p(t("【도 2】")),
         p(group(6)),
     ]
@@ -221,6 +229,10 @@ rels = (
     '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
     '<Relationship Id="rIdSty" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
     f'<Relationship Id="rIdImg" Type="{img}" Target="media/image1.png"/>'
+    f'<Relationship Id="rIdSvg" Type="{img}" Target="media/icon.svg"/>'
+    f'<Relationship Id="rIdLinked" Type="{img}" Target="file:///C:/figs/fig1.png" TargetMode="External"/>'
+    # 파일이 없는 관계(본문은 쓰지 않는다) — 조용히 지운다
+    f'<Relationship Id="rIdGone" Type="{img}" Target="media/gone.png"/>'
     f'<Relationship Id="rIdWmf" Type="{img}" Target="media/image2.wmf"/>'
     f'<Relationship Id="rIdEmf" Type="{img}" Target="media/image3.emf"/>'
     '<Relationship Id="rIdCm" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="comments.xml"/>'
@@ -230,7 +242,7 @@ rels = (
 types = (
     '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
     '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
-    '<Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/>'
+    '<Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="svg" ContentType="image/svg+xml"/>'
     '<Default Extension="wmf" ContentType="image/x-wmf"/><Default Extension="emf" ContentType="image/x-emf"/>'
     '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
     '<Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/>'
@@ -262,6 +274,10 @@ with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
     z.writestr("word/comments.xml", comments)
     z.writestr("word/commentsExtended.xml", comments_ex)
     z.writestr("word/media/image1.png", png(60, 40, (40, 120, 200)))
+    z.writestr(
+        "word/media/icon.svg",
+        '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40"><rect x="2" y="2" width="76" height="36" fill="none" stroke="black" stroke-width="3"/></svg>',
+    )
     z.write(here / "fixtures" / "shape.wmf", "word/media/image2.wmf")
     z.write(here / "fixtures" / "shape.emf", "word/media/image3.emf")
 print(out)
