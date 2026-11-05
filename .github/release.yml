@@ -1,0 +1,20 @@
+# 릴리스 노트 자동 생성(「What's Changed」) 분류.
+# windows 워크플로가 .github/release-notes.md 뒤에 이 분류로 PR 목록을 붙인다.
+# https://docs.github.com/repositories/releasing-projects-on-github/automatically-generated-release-notes
+changelog:
+  exclude:
+    labels:
+      - skip-changelog
+    authors:
+      - dependabot
+  categories:
+    - title: ✨ 새 기능
+      labels: [feature, enhancement]
+    - title: 🐛 고친 것
+      labels: [bug, fix]
+    - title: 📝 문서
+      labels: [documentation, docs]
+    - title: 👷 빌드 · CI
+      labels: [ci, build]
+    - title: 🔧 그 밖의 변경
+      labels: ["*"]
