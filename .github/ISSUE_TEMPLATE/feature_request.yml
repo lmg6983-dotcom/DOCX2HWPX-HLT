@@ -1,0 +1,43 @@
+name: ✨ 기능 제안
+description: 새 기능이나 더 나은 동작을 제안할 때
+title: "[제안] "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: 아이디어를 나눠 주셔서 고맙습니다! ✨
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 어떤 점이 불편한가요?
+      description: 지금 어떤 작업을 손으로 하고 있는지 알려 주세요.
+      placeholder: 변환한 HLT 에서 표 칸 안 첨자를 매번 다시 고칩니다.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: 바라는 동작
+      placeholder: 표 칸 안 첨자도 본문처럼 첨자 서식으로 옮겨 주면 좋겠습니다.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 관련된 곳
+      multiple: true
+      options:
+        - HLT (NK-Editor)
+        - HWPX (MOIP-Editor)
+        - 화면 앱
+        - 명령줄 · JSON
+        - 문서 · 배포
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 덧붙일 말
+      description: 참고 자료, 편집기 화면 캡처 등
