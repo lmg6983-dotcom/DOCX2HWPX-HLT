@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::io::{Cursor, Read, Write};
 
 use crate::chars::{self, Piece};
+use crate::messages;
 use crate::render::{Png, Renderer};
 use crate::xml::{self, Element, Node};
 
@@ -58,8 +59,12 @@ struct Normalizer<'a> {
     math_total: usize,
     /// 원래 DOCX 의 부분(그룹 안 그림을 읽는다).
     parts: HashMap<String, Vec<u8>>,
-    /// 지금까지 만난 표 수(경고에 「표 n」으로 쓴다).
+    /// 지금까지 만난 표 수(경고에 「문서의 n번째 표」로 쓴다).
     tables: usize,
+    /// 지금 걷는 자리: 가장 가까운 앞의 식별 번호(【0012】 …). 경고에 「【0012】 부근」으로 쓴다.
+    place: String,
+    /// 그림 관계 id → 그 그림이 처음 나오는 자리(식별 번호).
+    image_places: HashMap<String, String>,
 }
 
 /// `nk_chars` = HLT(NK-Editor) 글자 규칙까지 적용한다.
@@ -107,6 +112,8 @@ pub fn normalize(
         math_total: count_math(&document),
         parts: parts.iter().cloned().collect(),
         tables: 0,
+        place: String::new(),
+        image_places: image_places(&document),
     };
     n.convert_metafiles(&parts);
     for (k, v) in [
@@ -195,10 +202,15 @@ impl Normalizer<'_> {
             let Some((_, bytes)) = parts.iter().find(|(n, _)| *n == path) else {
                 continue;
             };
+            let at = rel
+                .get("Id")
+                .and_then(|id| self.image_places.get(id))
+                .cloned()
+                .unwrap_or_default();
             let png = crate::render::metafile_to_png(bytes, is_emf).or_else(|e| {
                 self.report.warnings.push((
                     "metafile_placeholder",
-                    format!("{target}: {e} — 자리표 그림을 넣습니다"),
+                    messages::metafile_placeholder(&at, target, &e),
                 ));
                 self.renderer
                     .glyph("[그림 변환 실패]", DEFAULT_SIZE_PT)
@@ -211,10 +223,10 @@ impl Normalizer<'_> {
                     retarget.push((rel.get("Id").unwrap_or_default().to_string(), name));
                     self.report.metafiles += 1;
                 }
-                Err(e) => self
-                    .report
-                    .warnings
-                    .push(("metafile_failed", format!("{target}: {e}"))),
+                Err(e) => self.report.warnings.push((
+                    "metafile_failed",
+                    messages::metafile_failed(&at, target, &e),
+                )),
             }
         }
         for node in &mut self.rels.children {
@@ -254,11 +266,12 @@ impl Normalizer<'_> {
             let external = rel
                 .get("TargetMode")
                 .is_some_and(|m| m.eq_ignore_ascii_case("external"));
+            use messages::MissingPicture as Why;
             let problem = if external {
-                Some("문서 안에 없고 링크(파일에 연결)로만 연결돼 있어")
+                Some(Why::Linked)
             } else {
                 match self.part_bytes(&target) {
-                    None => Some("파일이 DOCX 안에 없어"),
+                    None => Some(Why::NotInFile),
                     Some(bytes) if readable(&bytes) => None,
                     Some(bytes) if looks_svg(&target, &bytes) => {
                         match crate::render::svg_image_to_png(&bytes) {
@@ -269,10 +282,10 @@ impl Normalizer<'_> {
                                 retarget.push((id.clone(), Some(name)));
                                 None
                             }
-                            Err(_) => Some("SVG 를 그리지 못해"),
+                            Err(_) => Some(Why::Svg),
                         }
                     }
-                    Some(_) => Some("읽을 수 없는 형식이라"),
+                    Some(_) => Some(Why::Unreadable),
                 }
             };
             let Some(problem) = problem else { continue };
@@ -297,7 +310,11 @@ impl Normalizer<'_> {
             };
             self.report.warnings.push((
                 "image_missing",
-                format!("그림 {target}: {problem} 「그림 없음」 자리표를 넣었습니다"),
+                messages::picture_missing(
+                    self.image_places.get(&id).map_or("", String::as_str),
+                    &target,
+                    problem,
+                ),
             ));
             retarget.push((id, Some(name)));
         }
@@ -351,12 +368,9 @@ impl Normalizer<'_> {
                         .attr("Target", &target),
                 ));
                 point_dangling(document, &ids, &id);
-                self.report.warnings.push((
-                    "image_missing",
-                    format!(
-                        "없는 관계를 가리키는 그림 {dangling}곳에 「그림 없음」 자리표를 넣었습니다"
-                    ),
-                ));
+                self.report
+                    .warnings
+                    .push(("image_missing", messages::pictures_dangling(dangling)));
             }
         }
     }
@@ -396,6 +410,9 @@ impl Normalizer<'_> {
                 }
                 "m:oMathPara" | "m:oMath" => out.extend(self.math(&child).map(Node::El)),
                 "w:p" => {
+                    if let Some(marker) = messages::marker_of(&child.text()) {
+                        self.place = marker;
+                    }
                     let display_only = child.elements().any(|e| e.name == "m:oMathPara")
                         && child.elements().all(|e| {
                             matches!(
@@ -413,10 +430,9 @@ impl Normalizer<'_> {
                     self.tables += 1;
                     let n = self.tables;
                     if !crate::tables::has_rows(&child) {
-                        self.report.warnings.push((
-                            "table_repaired",
-                            format!("표 {n}: 줄이 없는 빈 표를 지웠습니다"),
-                        ));
+                        self.report
+                            .warnings
+                            .push(("table_repaired", messages::table_empty(&self.place, n)));
                         continue;
                     }
                     if self.nk_chars {
@@ -424,10 +440,7 @@ impl Normalizer<'_> {
                         if !fixed.fixes.is_empty() {
                             self.report.warnings.push((
                                 "table_repaired",
-                                format!(
-                                    "표 {n}: HLT 가 읽을 수 있게 구조를 고쳤습니다 — {}",
-                                    fixed.fixes.join(", ")
-                                ),
+                                messages::table_repaired(&self.place, n, &fixed.fixes),
                             ));
                         }
                     }
@@ -499,7 +512,7 @@ impl Normalizer<'_> {
         if nested {
             self.report.warnings.push((
                 "nested_table_flattened",
-                "표 칸 안의 표는 HLT 에서 글(「칸 | 칸 / 다음 줄」)로 풀었습니다".into(),
+                messages::nested_table(&self.place),
             ));
         }
         let mut p = Element::new("w:p");
@@ -523,7 +536,7 @@ impl Normalizer<'_> {
                 // 그리지 못한 수식은 글로라도 남긴다(잃지 않는다).
                 self.report.warnings.push((
                     "equation_as_text",
-                    format!("수식을 그리지 못해 글로 남김: {e} ← {body}"),
+                    messages::equation_as_text(&self.place, &format!("{e} ← {body}")),
                 ));
                 return Some(
                     Element::new("w:r").child(
@@ -628,17 +641,17 @@ impl Normalizer<'_> {
             .to_string();
         let svg = crate::shapes::to_svg(data, cx, cy, &|id| self.media(id))?;
         for what in &svg.skipped {
-            self.report.warnings.push((
-                "shape_partial",
-                format!("{name}: {what} 은(는) 그리지 못했습니다"),
-            ));
+            self.report
+                .warnings
+                .push(("shape_partial", messages::shape_partial(&self.place, what)));
         }
         let png = match crate::render::shapes_to_png(&svg.svg, svg.width_pt, svg.height_pt) {
             Ok(png) => png,
             Err(e) => {
-                self.report
-                    .warnings
-                    .push(("shape_failed", format!("{name}: {e}")));
+                self.report.warnings.push((
+                    "shape_failed",
+                    messages::shape_failed(&self.place, &format!("{name}: {e}")),
+                ));
                 return None;
             }
         };
@@ -822,7 +835,7 @@ impl Normalizer<'_> {
         for code in unmapped {
             self.report.warnings.push((
                 "symbol_unmapped",
-                format!("{font} 글꼴 기호 U+{code:04X} 는 옮기지 못했습니다"),
+                messages::symbol_unmapped(&self.place, &font, code),
             ));
         }
         if let Some(Node::El(rpr)) = run
@@ -852,7 +865,7 @@ impl Normalizer<'_> {
                 Some(c) => *el = Element::new("w:t").text_child(&c.to_string()),
                 None => self.report.warnings.push((
                     "symbol_unmapped",
-                    format!("{font} 글꼴 기호 U+{code:04X} 는 옮기지 못했습니다"),
+                    messages::symbol_unmapped(&self.place, &font, code),
                 )),
             }
         }
@@ -917,7 +930,7 @@ impl Normalizer<'_> {
                             Err(e) => {
                                 self.report.warnings.push((
                                     "glyph_failed",
-                                    format!("글자 {cluster:?} 를 그리지 못했습니다: {e}"),
+                                    messages::glyph_failed(&self.place, &cluster, &e),
                                 ));
                                 current.children.push(Node::El(text_el(&cluster)));
                             }
@@ -1086,6 +1099,31 @@ fn apply_style_symbol_fonts(el: &mut Element, fonts: &HashMap<String, Option<Str
         }
     }
     runs(el, None, fonts);
+}
+
+/// 그림 관계 id → 그 그림이 처음 나오는 자리(가장 가까운 앞의 식별 번호).
+fn image_places(document: &Element) -> HashMap<String, String> {
+    fn walk(el: &Element, last: &mut String, out: &mut HashMap<String, String>) {
+        if el.name == "w:p"
+            && let Some(m) = messages::marker_of(&el.text())
+        {
+            *last = m;
+        }
+        let id = match el.name.as_str() {
+            "a:blip" => el.get("r:embed").or_else(|| el.get("r:link")),
+            "v:imagedata" => el.get("r:id").or_else(|| el.get("o:relid")),
+            _ => None,
+        };
+        if let Some(id) = id {
+            out.entry(id.to_string()).or_insert_with(|| last.clone());
+        }
+        for child in el.elements() {
+            walk(child, last, out);
+        }
+    }
+    let mut out = HashMap::new();
+    walk(document, &mut String::new(), &mut out);
+    out
 }
 
 /// hlt-core 와 같은 방법(image 크레이트, 같은 판 · 같은 기능)으로 그림 크기를 읽을 수 있는가.

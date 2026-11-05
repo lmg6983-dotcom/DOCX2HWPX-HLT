@@ -352,8 +352,14 @@ impl Writer {
             .and_then(|b| b.get("r:embed"))
             .or_else(|| el.find("v:imagedata").and_then(|b| b.get("r:id")))?;
         let Some(bytes) = self.media.get(id).cloned() else {
-            self.warnings
-                .push(("image_missing", format!("그림 {id} 의 파일이 없습니다")));
+            self.warnings.push((
+                "image_missing",
+                crate::messages::picture_missing(
+                    "",
+                    self.rels.get(id).map_or(id, String::as_str),
+                    crate::messages::MissingPicture::NotInFile,
+                ),
+            ));
             return None;
         };
         let path = self.rels.get(id).cloned().unwrap_or_default();

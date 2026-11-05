@@ -120,7 +120,10 @@ fn hlt_keeps_equations_tables_and_nk_characters() {
         .map(|w| w["message"].as_str().unwrap())
         .collect();
     assert!(
-        missing.len() == 1 && missing[0].contains("링크"),
+        missing.len() == 1
+            && missing[0].contains("연결")
+            && missing[0].contains(r"C:\figs\fig1.png")
+            && missing[0].contains("【0009】 부근"),
         "{missing:?}"
     );
     // hlt-core 가 거부하던 표는 고쳐 넘기고 무엇을 고쳤는지 알린다.
@@ -134,12 +137,13 @@ fn hlt_keeps_equations_tables_and_nk_characters() {
     assert!(
         repaired.len() == 1
             && [
-                "표 3",
-                "gridBefore",
+                "3번째 표",
+                "빈 자리",
                 "세로 병합",
                 "모자란 줄",
                 "콘텐츠 컨트롤",
-                "열 너비"
+                "열 너비",
+                "부근"
             ]
             .iter()
             .all(|k| repaired[0].contains(k)),

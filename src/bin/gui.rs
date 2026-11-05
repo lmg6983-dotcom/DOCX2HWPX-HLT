@@ -166,7 +166,10 @@ impl App {
                 Err(e) => {
                     let failure = docx2hwpx_hlt::fail(
                         "input_unreadable",
-                        format!("{}: {e}", input.display()),
+                        docx2hwpx_hlt::messages::input_unreadable(
+                            &file_name(&input),
+                            &format!("{}: {e}", input.display()),
+                        ),
                     );
                     let _ = tx.send(Msg::Finished(Err(failure), Value::Null));
                     ctx.request_repaint();
@@ -251,7 +254,10 @@ impl App {
                     if finished.is_none() {
                         let failure = docx2hwpx_hlt::fail(
                             "convert_failed",
-                            "변환 중 예기치 않은 오류로 멈췄습니다",
+                            docx2hwpx_hlt::messages::with_tech(
+                                "변환 중에 예기치 않은 오류로 멈췄습니다. 문서를 다시 저장한 뒤 한 번 더 변환해 보고, 그래도 안 되면 이 메시지와 함께 개발자에게 알려 주세요.",
+                                "변환 스레드가 결과 없이 끝남",
+                            ),
                         );
                         finished = Some((Err(failure), Value::Null));
                     }
@@ -491,10 +497,16 @@ impl eframe::App for App {
                     summary(ui, report);
                 }
                 State::Failed(f) => {
-                    let (what, how) = explain(f);
-                    ui.colored_label(ERR, RichText::new(what).strong());
-                    ui.label(RichText::new(how).color(INK));
-                    ui.label(RichText::new(&f.message).size(12.0).color(MUTED));
+                    let (plain, tech) = docx2hwpx_hlt::split_message(&f.message);
+                    ui.colored_label(ERR, RichText::new(failure_title(f)).strong());
+                    ui.label(RichText::new(plain).color(INK));
+                    if let Some(tech) = tech {
+                        ui.label(
+                            RichText::new(format!("기술 정보(문의할 때 함께 보내 주세요): {tech}"))
+                                .size(12.0)
+                                .color(MUTED),
+                        );
+                    }
                     save_now = false;
                 }
                 _ => {}
@@ -519,21 +531,13 @@ impl eframe::App for App {
     }
 }
 
-/// 실패 코드 → (무엇이 잘못됐나, 어떻게 하나). 원래 메시지는 그 아래 작게.
-fn explain(f: &Failure) -> (&'static str, &'static str) {
+/// 실패 코드 → 제목. 무엇을 하면 되는지는 메시지(사람용 문장)에 있다.
+fn failure_title(f: &Failure) -> &'static str {
     match f.code {
-        "input_unreadable" => (
-            "파일을 읽지 못했습니다",
-            "파일이 옮겨졌거나 다른 프로그램(Word 등)이 열고 있는지 확인한 뒤 다시 변환해 주세요.",
-        ),
-        "invalid_docx" => (
-            "DOCX 파일이 아니거나 손상되었습니다",
-            "Word 에서 열어 「다른 이름으로 저장 → Word 문서(.docx)」로 다시 저장한 뒤 변환해 주세요.",
-        ),
-        _ => (
-            "변환하지 못했습니다",
-            "문서 구조(표 · 그림 배치)에서 막혔습니다. 아래 내용을 확인하거나, 다른 형식으로 바꿔 시도해 보세요.",
-        ),
+        "input_unreadable" => "파일을 열지 못했습니다",
+        "invalid_docx" => "Word 문서(.docx)가 아니거나 손상되었습니다",
+        "write_failed" => "파일을 저장하지 못했습니다",
+        _ => "변환하지 못했습니다",
     }
 }
 
@@ -541,40 +545,56 @@ fn explain(f: &Failure) -> (&'static str, &'static str) {
 fn summary(ui: &mut egui::Ui, report: &Value) {
     let n = |k: &str| report[k].as_u64().unwrap_or(0);
     let list = |k: &str| report[k].as_array().cloned().unwrap_or_default();
-    let mut done = vec![
-        format!(
-            "변경 추적 {}곳 받아들임 · 메모 {}개 지움",
+    let mut done = Vec::new();
+    if n("revisions_accepted") + n("comments_removed") > 0 {
+        done.push(format!(
+            "변경 내용 추적 {}곳을 모두 반영하고, 메모 {}개를 지웠습니다",
             n("revisions_accepted"),
             n("comments_removed")
-        ),
-        format!(
-            "수식 그림 {}개 · WMF/EMF 그림 {}개 · 도형 그림 {}개",
-            n("equations"),
-            n("metafiles"),
-            n("shapes")
-        ),
-    ];
+        ));
+    }
+    let pictures: Vec<String> = [
+        ("수식", "equations"),
+        ("옛 형식(WMF/EMF) 그림", "metafiles"),
+        ("도형 묶음", "shapes"),
+    ]
+    .iter()
+    .filter(|(_, k)| n(k) > 0)
+    .map(|(what, k)| format!("{what} {}개", n(k)))
+    .collect();
+    if !pictures.is_empty() {
+        done.push(format!("{}를 그림으로 넣었습니다", pictures.join(" · ")));
+    }
     if n("scripts") > 0 {
-        done.push(format!("첨자 글자를 첨자 서식으로 {}곳", n("scripts")));
+        done.push(format!(
+            "²·₂ 같은 첨자 모양 글자 {}곳을 위/아래첨자 서식으로 바꿨습니다",
+            n("scripts")
+        ));
     }
     for s in list("substitutions") {
         done.push(format!(
-            "「{}」 → 「{}」 {}곳",
+            "「{}」를 모양이 비슷한 「{}」로 바꿨습니다 ({}곳)",
             s["from"].as_str().unwrap_or(""),
             s["to"].as_str().unwrap_or(""),
             s["count"]
         ));
     }
+    if done.is_empty() {
+        done.push("따로 바꾼 것이 없습니다".to_string());
+    }
     // 확인할 곳: 경고 + 글자 그림(편집기에서 글로 고칠 수 없다)
     let mut check: Vec<String> = list("warnings")
         .iter()
-        .map(|w| w["message"].as_str().unwrap_or("").to_string())
+        .map(|w| {
+            docx2hwpx_hlt::split_message(w["message"].as_str().unwrap_or(""))
+                .0
+                .to_string()
+        })
         .collect();
     for g in list("glyph_images") {
         check.push(format!(
-            "글자 그림으로 넣음: {} ({}) {}곳",
+            "「{}」는 NK-Editor 에 없는 글자라 그림으로 넣었습니다 ({}곳). 편집기에서 글자로 고칠 수 없으니, 고쳐야 하면 Word 원본에서 고친 뒤 다시 변환해 주세요",
             g["text"].as_str().unwrap_or(""),
-            g["codepoints"].as_str().unwrap_or(""),
             g["count"]
         ));
     }

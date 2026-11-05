@@ -81,6 +81,10 @@ target/release/docx2hwpx-hlt 명세서.docx --to hlt --json
 변환 뒤 `warnings` · `glyph_images` · `substitutions` 가 비어 있지 않으면 그 목록을 짧게 전하고,
 **NK-Editor / MOIP-Editor 에서 열어 확인한 뒤 제출하라**고 덧붙인다. 공개 사양이 없는 형식이다.
 
+`message`(경고 · 실패 모두)는 사용자용 문장이다: 「【0012】 부근 그림: 무엇이 일어났나 — 어떻게 하면 되나」 꼴이고,
+개발자용 내용은 맨 뒤 ` (기술 정보: …)` 에 있다. 사용자에게는 그 앞까지를 그대로 전하고, 기술 정보는 문의할 때만 덧붙인다.
+문구는 계약이 아니다(바뀔 수 있다) — 분기는 `code` 로 한다. 문구는 `src/messages.rs` 한곳에서 만든다.
+
 ## 고치기 (이 저장소에서 일할 때)
 
 | 파일 | 내용 |
@@ -94,6 +98,7 @@ target/release/docx2hwpx-hlt 명세서.docx --to hlt --json
 | `src/render.rs` | Typst · resvg 로 PNG 굽기 |
 | `src/shapes.rs` | Word 그룹 도형 · 벡터 도형 → SVG |
 | `src/tables.rs` | HLT 표 구조 바로잡기(hlt-core 표 판독이 거부하는 꼴) |
+| `src/messages.rs` | 사용자에게 보이는 경고 · 실패 문구(어디서 — 무엇이 — 어떻게, 기술 정보는 괄호) |
 | `src/hwpx.rs` | 고쳐 쓴 DOCX → HWPX(HwpForge) |
 | `tests/make_fixture.py` | 시험용 DOCX 생성기 → `tests/fixtures/sample.docx` |
 

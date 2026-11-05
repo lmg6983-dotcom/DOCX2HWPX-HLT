@@ -85,7 +85,7 @@ fn unwrap_wrappers(el: &mut Element, repair: &mut Repair) {
         if !changed {
             break;
         }
-        repair.add("감싼 요소(콘텐츠 컨트롤)를 벗김");
+        repair.add("입력 양식(콘텐츠 컨트롤)으로 감싼 칸을 보통 칸으로");
     }
 }
 
@@ -111,11 +111,11 @@ fn span_of(tc: &Element, repair: &mut Repair) -> usize {
         Some(v) => match int(Some(v)) {
             Some(n) if n >= 1 && v.trim().parse::<i64>().is_ok() => n as usize,
             Some(n) if n >= 1 => {
-                repair.add("칸 합치기 값을 정수로");
+                repair.add("셀 병합 값 정리");
                 n as usize
             }
             _ => {
-                repair.add("0 · 잘못된 칸 합치기를 1로");
+                repair.add("잘못된 셀 병합 풀기");
                 1
             }
         },
@@ -181,7 +181,7 @@ pub fn repair(tbl: &mut Element) -> Repair {
                 .unwrap_or(0)
                 .clamp(i32::MIN as i64, i32::MAX as i64);
             set_attr(ind, "w:w", &v.to_string());
-            repair.add("표 들여쓰기를 정수로");
+            repair.add("표 들여쓰기 값 정리");
         }
     }
 
@@ -243,12 +243,12 @@ pub fn repair(tbl: &mut Element) -> Repair {
     let mut widths: Vec<Option<i64>> = declared.clone();
     widths.resize(columns, None);
     if tbl.first("w:tblGrid").is_none() {
-        repair.add("열 목록(tblGrid)을 만듦");
+        repair.add("빠진 열 너비 정보를 새로 계산");
     } else if !exact {
-        repair.add("열 너비를 정수로");
+        repair.add("열 너비 값 정리");
     }
     if columns > declared.len() && !declared.is_empty() {
-        repair.add("칸이 넘치는 줄에 맞춰 열을 늘림");
+        repair.add("칸이 많은 줄에 맞춰 열을 늘림");
     }
     // 빠진 너비: 한 열만 차지하는 칸의 tcW, 그래도 없으면 아는 너비의 평균(없으면 1500)
     for tr in tbl.elements().filter(|e| e.name == "w:tr") {
@@ -312,7 +312,7 @@ pub fn repair(tbl: &mut Element) -> Repair {
         }
         let row = row_iter.next().expect("같은 줄 수");
         if row.before > 0 || row.after > 0 {
-            repair.add("줄 앞뒤 빈 자리(gridBefore · gridAfter)를 빈 칸으로");
+            repair.add("줄 앞뒤의 빈 자리를 빈 칸으로 채움");
         }
         if let Some(trpr) = child_mut(tr, "w:trPr") {
             trpr.children.retain(|n| {
@@ -345,7 +345,7 @@ pub fn repair(tbl: &mut Element) -> Repair {
             let mut span = span_of(&tc, &mut Repair::default());
             if col + span > columns {
                 span = columns.saturating_sub(col).max(1);
-                repair.add("표 밖으로 넘친 칸 합치기를 줄임");
+                repair.add("표 밖으로 넘친 셀 병합을 표 끝까지로 줄임");
             }
             // gridSpan 을 정수로 다시 쓴다(1 이면 지운다).
             let raw = tc
@@ -370,7 +370,7 @@ pub fn repair(tbl: &mut Element) -> Repair {
             {
                 set_cell_prop(&mut tc, "w:vMerge", Some("restart"));
                 merge = VMerge::Restart;
-                repair.add("위에 이어질 병합이 없는 세로 병합을 새 병합으로");
+                repair.add("어긋난 세로 병합을 다시 맞춤");
             }
             if merge != VMerge::None {
                 for slot in &mut next[col..col + span] {
@@ -379,7 +379,7 @@ pub fn repair(tbl: &mut Element) -> Repair {
             }
             if !tc.elements().any(|e| e.name == "w:p") {
                 tc.children.push(Node::El(Element::new("w:p")));
-                repair.add("문단 없는 칸에 빈 문단을 넣음");
+                repair.add("비어 있는 칸 정리");
             }
             tr.children.push(Node::El(tc));
             col += span;
@@ -389,7 +389,7 @@ pub fn repair(tbl: &mut Element) -> Repair {
         }
         if col < columns {
             if row.after == 0 || col + row.after < columns {
-                repair.add("칸이 모자란 줄을 빈 칸으로 채움");
+                repair.add("칸 수가 모자란 줄에 빈 칸을 채움");
             }
             lead(tr, &mut col, columns);
         }

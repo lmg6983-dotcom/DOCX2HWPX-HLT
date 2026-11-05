@@ -4,6 +4,7 @@ mod chars;
 mod hlt_lines;
 mod hwpx;
 pub mod image_opt;
+pub mod messages;
 mod normalize;
 mod omml;
 mod render;
@@ -21,6 +22,11 @@ use serde_json::{Value, json};
 pub struct Failure {
     pub code: &'static str,
     pub message: String,
+}
+
+/// 메시지 → (사람용 문장, 기술 정보). 화면 앱이 기술 정보를 작게 보여 줄 때 쓴다.
+pub fn split_message(message: &str) -> (&str, Option<&str>) {
+    messages::split(message)
 }
 
 pub fn fail(code: &'static str, message: impl Into<String>) -> Failure {
@@ -77,7 +83,7 @@ pub fn convert(docx: &[u8], target: Target, font_dirs: &[PathBuf], progress: Pro
         Ok(v) => v,
         Err(e) => {
             return Outcome {
-                result: Err(fail("invalid_docx", e)),
+                result: Err(fail("invalid_docx", messages::invalid_docx(&e))),
                 report: json!({}),
             };
         }
@@ -126,7 +132,7 @@ pub fn convert(docx: &[u8], target: Target, font_dirs: &[PathBuf], progress: Pro
                 );
                 bytes
             })
-            .map_err(|e| fail("convert_failed", e)),
+            .map_err(|e| fail("convert_failed", messages::hwpx_failure(&e))),
     };
     substitutions.sort_by_key(|v| v["from"].as_str().unwrap_or_default().to_string());
     if result.is_ok() {
@@ -185,22 +191,13 @@ fn fit_hlt_limit(
     if docx.len() > limit {
         return Err(fail(
             "convert_failed",
-            format!(
-                "HLT: 그림을 72dpi 까지 줄여도 문서가 {:.0}MB 라 HLT 변환 한도({:.0}MB)를 넘습니다. 문서를 나누어 변환하거나 큰 그림을 줄여 주세요",
-                mb(docx.len()),
-                mb(limit)
-            ),
+            messages::too_large(mb(docx.len()), mb(limit)),
         ));
     }
     if let Some(dpi) = used {
         warnings.push(json!({
             "code": "images_downscaled",
-            "message": format!(
-                "문서가 {:.0}MB 라 HLT 변환 한도({:.0}MB)를 넘어 그림을 {dpi}dpi 로 줄였습니다({:.0}MB). 도면 · 구조식 그림이 읽히는지 확인하세요",
-                mb(start),
-                mb(limit),
-                mb(docx.len())
-            ),
+            "message": messages::images_downscaled(mb(start), mb(limit), dpi, mb(docx.len())),
         }));
     }
     Ok((docx, count))
@@ -215,7 +212,12 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), Failure> {
     ));
     let written = std::fs::write(&temp, bytes)
         .and_then(|()| std::fs::rename(&temp, path))
-        .map_err(|e| fail("write_failed", format!("{}: {e}", path.display())));
+        .map_err(|e| {
+            fail(
+                "write_failed",
+                messages::write_failed(&path.display().to_string(), &e.to_string()),
+            )
+        });
     if written.is_err() {
         let _ = std::fs::remove_file(&temp);
     }
@@ -248,11 +250,20 @@ fn hlt_bytes(
     let docx = std::env::temp_dir().join(format!("{base}.docx"));
     let output = std::env::temp_dir().join(format!("{base}.hlt"));
     let result = std::fs::write(&docx, normalized)
-        .map_err(|e| fail("write_failed", format!("{}: {e}", docx.display())))
+        .map_err(|e| {
+            fail(
+                "write_failed",
+                messages::write_failed(&docx.display().to_string(), &e.to_string()),
+            )
+        })
         .and_then(|()| hlt_from_docx(&docx, &output, pct, substitutions))
         .and_then(|()| {
-            std::fs::read(&output)
-                .map_err(|e| fail("write_failed", format!("{}: {e}", output.display())))
+            std::fs::read(&output).map_err(|e| {
+                fail(
+                    "write_failed",
+                    messages::write_failed(&output.display().to_string(), &e.to_string()),
+                )
+            })
         });
     let _ = std::fs::remove_file(&docx);
     let _ = std::fs::remove_file(&output);
@@ -268,7 +279,11 @@ fn hlt_from_docx(
     let core = |e: hlt_core::CoreError| {
         fail(
             "convert_failed",
-            format!("HLT: {} ({}) {:?}", e.message, e.phase, e.details),
+            messages::hlt_failure(
+                &e.message,
+                &e.phase,
+                &format!("HLT: {} ({}) {:?}", e.message, e.phase, e.details),
+            ),
         )
     };
     let (mut document, payloads, subs) = hlt_core::load_generation_input(docx).map_err(core)?;
@@ -347,6 +362,10 @@ mod tests {
 
         let err = fit_hlt_limit(&docx, 300, 1, &mut Vec::new()).unwrap_err();
         assert_eq!(err.code, "convert_failed");
-        assert!(err.message.contains("72dpi"), "{}", err.message);
+        assert!(
+            err.message.contains("72dpi") && err.message.contains("나누어"),
+            "{}",
+            err.message
+        );
     }
 }

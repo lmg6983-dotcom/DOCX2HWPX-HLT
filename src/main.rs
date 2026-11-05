@@ -154,14 +154,18 @@ fn run(args: &Args, result: &mut Value) -> Result<(), Failure> {
     if args.output.exists() && !args.overwrite {
         return Err(fail(
             "output_exists",
-            format!(
-                "{} 이(가) 이미 있습니다. --overwrite 를 주거나 -o 로 다른 이름을 주세요",
-                args.output.display()
-            ),
+            docx2hwpx_hlt::messages::output_exists(&args.output.display().to_string()),
         ));
     }
-    let docx = std::fs::read(&args.input)
-        .map_err(|e| fail("input_unreadable", format!("{}: {e}", args.input.display())))?;
+    let docx = std::fs::read(&args.input).map_err(|e| {
+        fail(
+            "input_unreadable",
+            docx2hwpx_hlt::messages::input_unreadable(
+                &args.input.display().to_string(),
+                &e.to_string(),
+            ),
+        )
+    })?;
     let target = if args.hlt {
         Target::Hlt {
             pct: args.pct,
@@ -181,46 +185,55 @@ fn print_human(r: &Value) {
     let n = |k: &str| r[k].as_u64().unwrap_or(0);
     if r.get("equations").is_some() {
         eprintln!(
-            "변경 추적 {}곳 받아들임 · 메모 {}개 지움",
+            "변경 내용 추적 {}곳 반영 · 메모 {}개 지움",
             n("revisions_accepted"),
             n("comments_removed")
         );
-    }
-    if r.get("equations").is_some() {
         eprintln!(
-            "수식 그림 {}개 · WMF/EMF 그림 변환 {}개 · 도형 그림 {}개",
+            "그림으로 넣음: 수식 {}개 · 옛 형식(WMF/EMF) 그림 {}개 · 도형 묶음 {}개",
             n("equations"),
             n("metafiles"),
             n("shapes")
         );
     }
     if r["format"] == "hlt" && r.get("scripts").is_some() {
-        eprintln!("첨자 글자 → 첨자 서식 {}곳", n("scripts"));
+        eprintln!("첨자 모양 글자 → 위/아래첨자 서식 {}곳", n("scripts"));
         for s in r["substitutions"].as_array().into_iter().flatten() {
             eprintln!(
-                "  바꾼 글자: {} ({}) → {} × {}",
-                s["from"], s["codepoints"], s["to"], s["count"]
+                "  비슷한 글자로 바꿈: 「{}」 → 「{}」 {}곳",
+                s["from"].as_str().unwrap_or_default(),
+                s["to"].as_str().unwrap_or_default(),
+                s["count"]
             );
         }
         for g in r["glyph_images"].as_array().into_iter().flatten() {
             eprintln!(
-                "  글자 그림: {} ({}) × {}",
-                g["text"], g["codepoints"], g["count"]
+                "  NK-Editor 에 없어 그림으로 넣은 글자: 「{}」 ({}) {}곳",
+                g["text"].as_str().unwrap_or_default(),
+                g["codepoints"].as_str().unwrap_or_default(),
+                g["count"]
             );
         }
     }
-    for w in r["warnings"].as_array().into_iter().flatten() {
+    let warnings: Vec<&Value> = r["warnings"].as_array().into_iter().flatten().collect();
+    if !warnings.is_empty() {
+        eprintln!("편집기에서 확인할 곳 {}:", warnings.len());
+    }
+    for w in warnings {
         eprintln!(
-            "경고[{}]: {}",
-            w["code"].as_str().unwrap_or_default(),
-            w["message"].as_str().unwrap_or_default()
+            "  - {} [{}]",
+            w["message"].as_str().unwrap_or_default(),
+            w["code"].as_str().unwrap_or_default()
         );
     }
     match r["error"]["message"].as_str() {
         Some(m) => eprintln!(
-            "실패[{}]: {m}",
+            "실패: {m} [{}]",
             r["error"]["code"].as_str().unwrap_or_default()
         ),
-        None => eprintln!("완료: {}", r["output"].as_str().unwrap_or_default()),
+        None => eprintln!(
+            "완료: {} — NK-Editor · MOIP-Editor 에서 열어 확인한 뒤 제출하세요",
+            r["output"].as_str().unwrap_or_default()
+        ),
     }
 }
