@@ -158,6 +158,11 @@ pub fn shapes_to_png(svg: &str, width_pt: f64, height_pt: f64) -> Result<Vec<u8>
     pixmap.encode_png().map_err(|e| e.to_string())
 }
 
+/// DOCX 에 든 SVG 그림(Word 365 아이콘 · 그래픽) → PNG.
+pub fn svg_image_to_png(svg: &[u8]) -> Result<Vec<u8>, String> {
+    svg_to_png(svg)
+}
+
 fn svg_to_png(svg: &[u8]) -> Result<Vec<u8>, String> {
     let mut options = resvg::usvg::Options::default();
     options.fontdb_mut().load_system_fonts(); // 그림 속 글자

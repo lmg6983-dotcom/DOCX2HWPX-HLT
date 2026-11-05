@@ -111,6 +111,18 @@ fn hlt_keeps_equations_tables_and_nk_characters() {
             .iter()
             .any(|w| w["code"] == "nested_table_flattened")
     );
+    // 링크로만 연결된 그림은 「그림 없음」 자리표로(SVG 는 PNG 로, 파일이 없는 안 쓰는 관계는 조용히 지운다).
+    let missing: Vec<&str> = r["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|w| w["code"] == "image_missing")
+        .map(|w| w["message"].as_str().unwrap())
+        .collect();
+    assert!(
+        missing.len() == 1 && missing[0].contains("링크"),
+        "{missing:?}"
+    );
     // hlt-core 가 거부하던 표는 고쳐 넘기고 무엇을 고쳤는지 알린다.
     let repaired: Vec<&str> = r["warnings"]
         .as_array()
@@ -134,8 +146,8 @@ fn hlt_keeps_equations_tables_and_nk_characters() {
         "{repaired:?}"
     );
     let (doc, payloads) = hlt_core::hml_document_from_hlt(&out).unwrap();
-    // 수식 6 · WMF/EMF 2 · OLE 수식 1 · PNG 2 · 글자 그림 4(x̂ ŷ ü ℏ) · 그룹 도형 1
-    assert_eq!(payloads.len(), 16);
+    // 수식 6 · WMF/EMF 2 · OLE 수식 1 · PNG 2 · 글자 그림 4(x̂ ŷ ü ℏ) · 그룹 도형 1 · SVG 1 · 「그림 없음」 1
+    assert_eq!(payloads.len(), 18);
     // OLE 수식은 VML 크기(60pt ≈ 21mm)대로 — 쪽 폭으로 늘지 않는다(그림 단위 0.282mm).
     let ole = doc
         .paragraphs
@@ -261,8 +273,8 @@ fn hwpx_keeps_equations_tables_and_text() {
         "표 + 칸 안의 표 + 구조를 고친 표(HWPX 는 그대로)"
     );
     assert_eq!(
-        images, 12,
-        "수식 6 · WMF/EMF 2 · OLE 수식 1 · PNG 2 · 그룹 도형 1"
+        images, 14,
+        "수식 6 · WMF/EMF 2 · OLE 수식 1 · PNG 2 · 그룹 도형 1 · SVG 1 · 「그림 없음」 1"
     );
 
     // 지식재산처가 고친 HWPX 에 맞춘 서식: 쪽 여백 · 바탕체 · 줄 간격 280% · 식별항목 규칙 · 런 합치기

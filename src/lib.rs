@@ -111,17 +111,12 @@ pub fn convert(docx: &[u8], target: Target, font_dirs: &[PathBuf], progress: Pro
     let mut images_optimized = 0;
     let result = match target {
         Target::Hlt { pct, max_dpi } => {
-            let optimized = if max_dpi == 0 {
-                Ok((normalized, 0))
-            } else {
-                image_opt::optimize(&normalized, max_dpi)
-            };
-            optimized
-                .map_err(|e| fail("convert_failed", e))
-                .and_then(|(docx, n)| {
+            fit_hlt_limit(&normalized, max_dpi, HLT_DOCX_LIMIT, &mut warnings).and_then(
+                |(docx, n)| {
                     images_optimized = n;
                     hlt_bytes(&docx, pct, &mut substitutions)
-                })
+                },
+            )
         }
         Target::Hwpx => hwpx::convert(&normalized)
             .map(|(bytes, w)| {
@@ -152,6 +147,63 @@ pub fn convert(docx: &[u8], target: Target, font_dirs: &[PathBuf], progress: Pro
             "warnings": warnings,
         }),
     }
+}
+
+/// hlt-core 가 읽는 DOCX 의 크기 한도(`MAX_DOCX_BYTES`, 넘으면 `size_limit_exceeded`).
+const HLT_DOCX_LIMIT: usize = 64 * 1024 * 1024;
+/// 한도를 넘으면 차례로 낮춰 볼 그림 해상도 상한.
+const FALLBACK_DPI: [u32; 4] = [200, 150, 100, 72];
+
+/// HLT 용 그림 다듬기(`max_dpi`, 0 이면 끔). 결과가 64MB 를 넘으면 해상도 상한을 낮춰 다시 줄이고
+/// `images_downscaled` 로 알린다. 72dpi 로도 넘으면 실패.
+fn fit_hlt_limit(
+    normalized: &[u8],
+    max_dpi: u32,
+    limit: usize,
+    warnings: &mut Vec<Value>,
+) -> Result<(Vec<u8>, usize), Failure> {
+    let optimize =
+        |dpi: u32| image_opt::optimize(normalized, dpi).map_err(|e| fail("convert_failed", e));
+    let (mut docx, mut count) = if max_dpi == 0 {
+        (normalized.to_vec(), 0)
+    } else {
+        optimize(max_dpi)?
+    };
+    let start = docx.len();
+    let mut used = None;
+    for dpi in FALLBACK_DPI {
+        if docx.len() <= limit {
+            break;
+        }
+        if max_dpi != 0 && dpi >= max_dpi {
+            continue;
+        }
+        (docx, count) = optimize(dpi)?;
+        used = Some(dpi);
+    }
+    let mb = |n: usize| n as f64 / 1024.0 / 1024.0;
+    if docx.len() > limit {
+        return Err(fail(
+            "convert_failed",
+            format!(
+                "HLT: 그림을 72dpi 까지 줄여도 문서가 {:.0}MB 라 HLT 변환 한도({:.0}MB)를 넘습니다. 문서를 나누어 변환하거나 큰 그림을 줄여 주세요",
+                mb(docx.len()),
+                mb(limit)
+            ),
+        ));
+    }
+    if let Some(dpi) = used {
+        warnings.push(json!({
+            "code": "images_downscaled",
+            "message": format!(
+                "문서가 {:.0}MB 라 HLT 변환 한도({:.0}MB)를 넘어 그림을 {dpi}dpi 로 줄였습니다({:.0}MB). 도면 · 구조식 그림이 읽히는지 확인하세요",
+                mb(start),
+                mb(limit),
+                mb(docx.len())
+            ),
+        }));
+    }
+    Ok((docx, count))
 }
 
 /// 옆의 임시 이름에 다 쓴 뒤 옮긴다 — 실패해도 원래 파일이 남고, 반쯤 쓴 파일이 생기지 않는다.
@@ -239,4 +291,62 @@ fn hlt_from_docx(
     )
     .map_err(core)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    /// 압축되지 않는 600×600 그림을 1인치 폭으로 넣은 DOCX.
+    fn noisy_docx() -> Vec<u8> {
+        let mut state = 1_u32;
+        let pixels: Vec<u8> = (0..600 * 600 * 3)
+            .map(|_| {
+                state = state.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+                (state >> 16) as u8
+            })
+            .collect();
+        let mut png = Vec::new();
+        image::RgbImage::from_raw(600, 600, pixels)
+            .unwrap()
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        let doc = r#"<w:document xmlns:w="w" xmlns:wp="wp" xmlns:a="a" xmlns:r="r"><w:body><w:p><w:r><w:drawing><wp:inline><wp:extent cx="914400" cy="914400"/><a:graphic><a:graphicData><a:blip r:embed="rId1"/></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:body></w:document>"#;
+        let rels = r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/a.png"/></Relationships>"#;
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let o = zip::write::SimpleFileOptions::default();
+        for (name, bytes) in [
+            ("word/document.xml", doc.as_bytes()),
+            ("word/_rels/document.xml.rels", rels.as_bytes()),
+            ("word/media/a.png", &png),
+        ] {
+            zip.start_file(name, o).unwrap();
+            zip.write_all(bytes).unwrap();
+        }
+        zip.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn oversized_docx_is_downscaled_or_refused() {
+        let docx = noisy_docx();
+        let mut w = Vec::new();
+        fit_hlt_limit(&docx, 300, usize::MAX, &mut w).unwrap();
+        assert!(w.is_empty(), "한도 안이면 경고 없음");
+
+        let at_72 = image_opt::optimize(&docx, 72).unwrap().0.len();
+        let mut w = Vec::new();
+        let (out, _) = fit_hlt_limit(&docx, 300, at_72, &mut w).unwrap();
+        assert!(out.len() <= at_72);
+        assert_eq!(w[0]["code"], "images_downscaled", "{w:?}");
+
+        // --image-dpi 0(다듬기 끔)이어도 한도를 넘으면 줄인다
+        let mut w = Vec::new();
+        fit_hlt_limit(&docx, 0, at_72, &mut w).unwrap();
+        assert_eq!(w[0]["code"], "images_downscaled");
+
+        let err = fit_hlt_limit(&docx, 300, 1, &mut Vec::new()).unwrap_err();
+        assert_eq!(err.code, "convert_failed");
+        assert!(err.message.contains("72dpi"), "{}", err.message);
+    }
 }

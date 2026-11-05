@@ -73,7 +73,8 @@ target/release/docx2hwpx-hlt 명세서.docx --to hlt --json
 | `shape_failed` | 도형을 그림으로 굽지 못해 원래대로 두었다(벡터 도형은 빠진다) |
 | `table_repaired` | 표 구조를 고쳐 넘겼다(HLT: 칸이 모자란 줄 · 줄 앞뒤 빈 자리 · 넘친 칸 합치기 · 위가 없는 세로 병합 · 소수 열 너비 · 콘텐츠 컨트롤 등, 모두: 빈 표 지움). 「표 n」을 편집기에서 확인한다 |
 | `nested_table_flattened` | HLT: 표 칸 안의 표를 글로 풀었다 |
-| `image_missing` | HWPX: DOCX 안에 그림 파일이 없다 |
+| `image_missing` | 그림 파일이 DOCX 안에 없거나 · 읽을 수 없거나 · 링크(파일에 연결)로만 연결돼 「그림 없음」 자리표를 넣었다(SVG 는 PNG 로 바꾸고, 쓰지 않는 깨진 그림 관계는 조용히 지운다). 사용자에게 원본 그림을 문서에 넣어 달라고 한다 |
+| `images_downscaled` | HLT: 문서가 hlt-core 한도(64MB)를 넘어 그림 해상도 상한을 200 · 150 · 100 · 72dpi 로 차례로 낮췄다. 72dpi 로도 넘으면 `convert_failed`(문서를 나누라는 `message`) |
 
 ### 사용자에게 알릴 것
 
