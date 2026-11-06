@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 📥 최신 판 내려받기
+    url: https://github.com/lmg6983-dotcom/DOCX_2_HWPX_OR_HLT/releases/latest
+    about: 제보하기 전에 최신 판에서도 같은 문제가 있는지 확인해 주세요.
+  - name: 📖 쓰는 법 · 알아 둘 점
+    url: https://github.com/lmg6983-dotcom/DOCX_2_HWPX_OR_HLT#readme
+    about: 옮기지 않는 것(그룹 밖 글상자 등)은 README 「알아 둘 점」에 있습니다.

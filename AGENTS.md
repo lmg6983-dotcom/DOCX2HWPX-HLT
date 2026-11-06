@@ -111,3 +111,4 @@ python3 tests/make_fixture.py   # 고정 자료를 바꿨을 때만
 - JSON 필드 · 실패 코드 · 경고 코드는 계약이다. 바꾸면 이 파일과 `tests/convert.rs` 를 함께 고친다.
 - 새 경고는 `normalize::Warnings` 에 코드와 함께 넣고 위 표에 더한다.
 - 실제 출원 명세서는 저장소에 넣지 않는다.
+- 사용자에게 보이는 변경은 `CHANGELOG.md` 의 `[Unreleased]` 에 더한다. 커밋 · PR 제목 · 릴리스 순서는 [CONTRIBUTING.md](CONTRIBUTING.md).

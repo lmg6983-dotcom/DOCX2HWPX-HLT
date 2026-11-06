@@ -1,0 +1,74 @@
+name: 🐛 버그 제보
+description: 변환이 실패하거나 결과가 이상할 때
+title: "[버그] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        제보해 주셔서 고맙습니다! 🙏
+
+        > ⚠️ **실제 출원 명세서는 올리지 마세요.** 문제를 재현하는 최소 예시 문서나 내용을 지운 문서를 붙여 주세요.
+
+  - type: input
+    id: version
+    attributes:
+      label: 판 번호
+      description: 화면 앱 바닥글, 또는 `docx2hwpx-hlt --version`
+      placeholder: v0.1.5
+    validations:
+      required: true
+
+  - type: dropdown
+    id: format
+    attributes:
+      label: 출력 형식
+      options:
+        - HLT (국내 출원)
+        - HLT (PCT 국내진입, --pct)
+        - HWPX
+    validations:
+      required: true
+
+  - type: dropdown
+    id: app
+    attributes:
+      label: 쓴 프로그램
+      options:
+        - 화면 앱 (docx2hwpx-hlt-gui.exe)
+        - 명령줄 (docx2hwpx-hlt.exe)
+        - 직접 빌드
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: 무슨 일이 있었나요?
+      description: 기대한 결과와 실제 결과를 적어 주세요. 편집기(NK-Editor · MOIP-Editor)에서 열었을 때의 문제라면 화면 캡처도 좋습니다.
+      placeholder: |
+        HLT 로 변환하면 87% 에서 실패합니다.
+        NK-Editor 에서 열면 【0015】 부근 표가 비어 있습니다.
+    validations:
+      required: true
+
+  - type: textarea
+    id: message
+    attributes:
+      label: 오류 · 경고 문구
+      description: 화면 앱에 나온 문구 전체(특히 맨 뒤 「기술 정보」), 또는 `--json` 출력 한 줄
+      render: text
+
+  - type: textarea
+    id: docx
+    attributes:
+      label: 문서의 특징 · 예시 파일
+      description: 표 · 수식 · 그림 · 도형 · 기호 글꼴 등 문제가 된 곳의 특징. 예시 `.docx` 를 끌어다 놓아 붙일 수 있습니다.
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: 확인
+      options:
+        - label: 붙인 파일에 공개되면 안 되는 명세서 내용이 없습니다.
+          required: true

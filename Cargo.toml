@@ -2,8 +2,12 @@
 name = "docx2hwpx-hlt"
 version = "0.1.5"
 edition = "2024"
+description = "Word 특허 명세서(.docx)를 NK-Editor(.hlt) · MOIP-Editor(.hwpx) 파일로 바꾸는 변환기"
 license = "MIT"
 repository = "https://github.com/lmg6983-dotcom/DOCX_2_HWPX_OR_HLT"
+readme = "README.md"
+keywords = ["docx", "hwpx", "hlt", "patent", "converter"]
+categories = ["command-line-utilities", "text-processing"]
 
 [[bin]]
 name = "docx2hwpx-hlt"
